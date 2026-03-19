@@ -1,0 +1,1 @@
+ALTER TABLE "course_uploads" ADD COLUMN "extracted_text" text;
