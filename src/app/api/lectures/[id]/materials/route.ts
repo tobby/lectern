@@ -1,9 +1,10 @@
+import path from "path";
+import crypto from "crypto";
 import { db } from "@/lib/db/drizzle";
 import { materials, lectures, modules } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { json, error, withAdmin, userRateLimit } from "@/lib/api-utils";
 import { uploadToR2 } from "@/lib/r2/client";
-import { generateStudyAid } from "@/lib/ai/generate-study-aid";
 
 const ALLOWED_TYPES = ["pdf", "docx", "pptx", "txt"];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -39,7 +40,9 @@ export const POST = withAdmin(async (req, { user, params }) => {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const r2Key = `courses/${lecture.module.course.id}/lectures/${lectureId}/${file.name}`;
+  const safeName = path.basename(file.name).replace(/[^a-zA-Z0-9._-]/g, "_");
+  const uniqueSuffix = crypto.randomBytes(4).toString("hex");
+  const r2Key = `courses/${lecture.module.course.id}/lectures/${lectureId}/${uniqueSuffix}-${safeName}`;
 
   // Upload to R2
   await uploadToR2(r2Key, buffer, file.type);
@@ -55,11 +58,6 @@ export const POST = withAdmin(async (req, { user, params }) => {
       fileSizeBytes: file.size,
     })
     .returning();
-
-  // Fire-and-forget: trigger AI generation
-  generateStudyAid(lectureId).catch((err) =>
-    console.error("Background study aid generation failed:", err)
-  );
 
   return json(material, 201);
 });

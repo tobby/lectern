@@ -73,17 +73,12 @@ export default function ChatPanel({ lectureId, className, compact, slideContext 
     setSending(true);
     setStreamingText("");
 
-    // Prepend slide context so AI knows what the student is looking at
-    const messageWithContext = slideContext
-      ? `[Currently viewing: ${slideContext}]\n\n${userMessage}`
-      : userMessage;
-
     try {
       const res = await fetch(`/api/lectures/${lectureId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ message: messageWithContext }),
+        body: JSON.stringify({ message: userMessage, slideContext: slideContext || undefined }),
       });
 
       if (res.status === 402) {
@@ -179,7 +174,7 @@ export default function ChatPanel({ lectureId, className, compact, slideContext 
             >
               {msg.role === "assistant" ? (
                 <div
-                  className="prose-chat text-xs overflow-x-auto [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_p]:text-xs [&_p]:mb-1.5 [&_p]:leading-relaxed [&_li]:text-xs [&_strong]:text-xs [&_code]:text-[10px] [&_pre]:text-[10px] [&_pre]:p-2 [&_pre]:my-2 [&_table]:text-[10px] [&_th]:px-2 [&_th]:py-1 [&_td]:px-2 [&_td]:py-1 [&_hr]:my-2"
+                  className="prose-chat text-xs overflow-x-auto [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:mt-2 [&_h1]:mb-1 [&_h2]:text-xs [&_h2]:font-semibold [&_h2]:mt-2 [&_h2]:mb-1 [&_h3]:text-xs [&_h3]:font-medium [&_h3]:mt-1.5 [&_h3]:mb-0.5 [&>div]:text-xs [&>div]:mb-1.5 [&>div]:leading-relaxed [&_li]:text-xs [&_ul]:my-1 [&_ol]:my-1 [&_strong]:text-xs [&_strong]:font-semibold [&_code]:text-[10px] [&_pre]:text-[10px] [&_pre]:p-2 [&_pre]:my-1.5 [&_table]:text-[10px] [&_th]:px-1.5 [&_th]:py-0.5 [&_td]:px-1.5 [&_td]:py-0.5 [&_hr]:my-1.5 [&_blockquote]:text-xs [&_blockquote]:my-1.5 [&_blockquote]:py-1 [&_blockquote]:pl-3"
                   dangerouslySetInnerHTML={{ __html: markdownToHtml(msg.content) }}
                 />
               ) : (
@@ -194,7 +189,7 @@ export default function ChatPanel({ lectureId, className, compact, slideContext 
           <div className="flex justify-start">
             <div className="max-w-[90%] rounded-lg bg-gray-50 border border-gray-100 px-3 py-1.5 text-xs text-gray-800 leading-relaxed">
               <div
-                className="prose-chat text-xs overflow-x-auto [&_p]:text-xs [&_p]:mb-1.5 [&_li]:text-xs [&_strong]:text-xs"
+                className="prose-chat text-xs overflow-x-auto [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:mt-2 [&_h1]:mb-1 [&_h2]:text-xs [&_h2]:font-semibold [&_h2]:mt-2 [&_h2]:mb-1 [&_h3]:text-xs [&_h3]:font-medium [&_h3]:mt-1.5 [&_h3]:mb-0.5 [&>div]:text-xs [&>div]:mb-1.5 [&>div]:leading-relaxed [&_li]:text-xs [&_strong]:text-xs [&_strong]:font-semibold"
                 dangerouslySetInnerHTML={{ __html: markdownToHtml(streamingText) }}
               />
             </div>

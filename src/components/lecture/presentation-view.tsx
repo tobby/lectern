@@ -56,7 +56,16 @@ export default function PresentationView({
     return () => document.removeEventListener("keydown", handleKey);
   }, [goNext, goPrev]);
 
-  if (!slide) return null;
+  if (!slide || slides.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center text-gray-500">
+          <p className="text-sm font-medium">No lesson content available</p>
+          <p className="mt-1 text-xs">Content will appear once lectures are generated.</p>
+        </div>
+      </div>
+    );
+  }
 
   const progress = ((currentSlide + 1) / slides.length) * 100;
 
@@ -134,7 +143,7 @@ export default function PresentationView({
             {/* Body */}
             {slide.body && (
               <div
-                className="prose-content text-sm text-gray-600 leading-relaxed [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_p]:text-sm [&_p]:mb-2 [&_li]:text-sm [&_pre]:text-xs [&_pre]:p-2 [&_pre]:my-2 [&_table]:text-xs [&_th]:px-2 [&_th]:py-1 [&_td]:px-2 [&_td]:py-1 [&_hr]:my-3"
+                className="prose-content text-sm text-gray-600 leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-gray-900 [&_h1]:mt-6 [&_h1]:mb-3 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-gray-800 [&_h2]:mt-5 [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-gray-700 [&_h3]:mt-4 [&_h3]:mb-1.5 [&>div]:text-sm [&>div]:mb-3 [&_li]:text-sm [&_li]:leading-relaxed [&_ul]:my-2 [&_ul]:space-y-1 [&_ol]:my-2 [&_ol]:space-y-1 [&_strong]:text-gray-900 [&_strong]:font-semibold [&_blockquote]:border-l-4 [&_blockquote]:border-indigo-200 [&_blockquote]:bg-indigo-50 [&_blockquote]:pl-4 [&_blockquote]:py-2 [&_blockquote]:my-3 [&_blockquote]:rounded-r-lg [&_blockquote]:text-sm [&_pre]:text-xs [&_pre]:p-3 [&_pre]:my-3 [&_pre]:rounded-xl [&_code]:text-xs [&_table]:text-xs [&_th]:px-2 [&_th]:py-1.5 [&_td]:px-2 [&_td]:py-1.5 [&_hr]:my-4"
                 dangerouslySetInnerHTML={{
                   __html: markdownToHtml(slide.body),
                 }}

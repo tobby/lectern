@@ -10,144 +10,212 @@ import { eq, asc } from "drizzle-orm";
 import { getObjectBuffer } from "@/lib/r2/client";
 import { extractText } from "./extract-text";
 import { getOrCreateDefaultModule } from "@/lib/db/default-module";
+import { parseSlides, parseQuestions } from "@/lib/study-aid-parser";
 
 const anthropic = new Anthropic();
 
 const MAX_CHUNK_CHARS = 450000; // ~112K tokens — leaves room for prompts
+const MODEL = "claude-sonnet-4-20250514";
 
 // ── Prompts ──
 
-const TOPIC_EXTRACTION_PROMPT = `You are an academic content analyzer. List ALL distinct topics, concepts, and subject areas covered in the provided text.
+const COMPREHENSION_PROMPT = `You are a world-class academic analyst. Your job is to deeply understand the provided course materials and extract a structured analysis that will guide lecture generation.
+
+Do NOT generate any teaching content yet. Your goal is ANALYSIS ONLY.
 
 Return ONLY valid JSON (no markdown wrapping):
 {
+  "courseSubject": "The academic field/domain (e.g., 'Quantitative Methods for Business', 'Corporate Finance')",
+  "coreThemes": ["The 3-5 overarching themes that tie the material together"],
   "topics": [
     {
       "name": "Topic name",
-      "summary": "2-3 sentence summary of what this topic covers",
-      "keyTerms": ["term1", "term2", "term3"]
+      "importance": "high|medium|low",
+      "prerequisites": ["Names of other topics that should be taught first"],
+      "keyInsights": ["The non-obvious things a student MUST understand — not just definitions, but the deeper 'aha' moments"],
+      "commonMisconceptions": ["What students typically get wrong about this topic and why"],
+      "sourceDepth": "How much detail the source material provides (deep|moderate|shallow)"
     }
-  ]
+  ],
+  "pedagogicalNotes": "Your expert assessment: What is the best order to teach these topics? What are the natural groupings? Where do students typically struggle? What connections between topics are not obvious but important?"
 }
 
-Be thorough — do not miss any topic. Include both major themes and specific subtopics.`;
+Be exhaustive in your topic extraction. Identify EVERY distinct concept, framework, model, and skill covered in the materials.`;
 
-const OUTLINE_PROMPT = `You are an expert university lecturer designing a course curriculum for MBA students.
+const CURRICULUM_PROMPT = `You are designing a university course curriculum for MBA students. You have already analyzed the source materials and produced a comprehension analysis.
 
-Analyze the provided content and determine the optimal way to divide it into 3-6 comprehensive lectures.
+Your job is to organize the topics into 3-6 lectures that build understanding PROGRESSIVELY. Each lecture must tell a coherent story — not just group related topics.
 
 Return ONLY valid JSON (no markdown wrapping):
 {
   "lectures": [
     {
-      "title": "Lecture title",
-      "description": "2-3 sentence description of what this lecture covers and its learning objectives",
-      "topicsCovered": ["topic1", "topic2", "topic3"]
+      "title": "A clear, specific lecture title (not generic like 'Introduction')",
+      "description": "What this lecture teaches and WHY it matters — write this as if pitching the lecture to a student who is deciding whether to attend",
+      "narrativeArc": "The story of this lecture: what question does it open with? How does it build? What insight does it culminate in?",
+      "topicsCovered": ["topic1", "topic2"],
+      "openingHook": "The first thing students see — a compelling question, scenario, or surprising fact that makes them want to learn more",
+      "keyTakeaways": ["The 3-5 things that should stick after studying this lecture"]
     }
   ]
 }
 
 Guidelines:
-- Create 3-6 lectures maximum. Fewer lectures = more depth per lecture.
-- Each lecture should cover a coherent, self-contained topic.
-- Follow a logical pedagogical sequence.
-- If content from different sources covers the same topic, consolidate.
-- List the specific topics each lecture should cover in topicsCovered.`;
+- Create 3-6 lectures. Fewer = more depth per lecture. Quality over quantity.
+- Each lecture should have a NARRATIVE ARC — it tells a story, not just lists information.
+- Sequence lectures so that each one builds on the previous. Prerequisites first.
+- Consolidate overlapping content from different sources.
+- The opening hook should make a student think "I need to understand this."`;
 
-const LECTURE_PROMPT = `You are an expert university lecturer writing comprehensive lesson notes for MBA students. A student with ZERO prior knowledge should be able to study ONLY your notes and pass the university exam with flying colors.
+const CONTENT_PROMPT = `You are the world's best professor writing lecture notes for MBA students. Your students are smart but have ZERO prior knowledge of this specific topic. They should be able to study ONLY your notes and pass the university exam with flying colors.
 
-You are generating content for a SINGLE lecture. Write EXTENSIVE, DETAILED content — do NOT summarize or abbreviate.
+Your goal is GENUINE UNDERSTANDING — not information transfer. A student reading your notes should feel like they're sitting in a brilliant lecture, not reading a textbook.
 
-Return ONLY valid JSON (no markdown wrapping):
-{
-  "keyConcepts": "comprehensive lesson notes in markdown",
-  "areasOfConcentration": "exam focus areas in markdown",
-  "examQuestions": "practice questions in markdown"
-}
+WRITING APPROACH:
+- Start every concept with WHY it matters — give students a reason to care before diving into what it is
+- Explain the INTUITION before the formal definition. Help students build mental models.
+- Use concrete, specific examples. Name real companies, real scenarios, real numbers. "Consider a company..." is weak; "When Netflix decided to split its streaming and DVD businesses in 2011..." is strong.
+- When introducing formulas or frameworks, walk through the logic step by step. Don't just state the formula — show WHY each piece is there.
+- Anticipate confusion. Where will students get stuck? Address it proactively.
+- Connect concepts to each other. Show how this concept relates to what came before and what comes next.
 
-## keyConcepts — COMPREHENSIVE LESSON NOTES
+Return ONLY markdown content. Do NOT wrap in JSON or code fences.
 
-This is the MAIN teaching content. For each concept (8-12 per lecture):
+FORMATTING RULES:
+- Your VERY FIRST LINE must be a concept title in bold: **Concept Title**
+- Structure content as 8-12 concept sections, each starting with **Concept Title** on its own line
+- Use ### for sub-headings within a concept (Core Explanation, How It Works, Real-World Application, etc.)
+- Use bullet points, numbered lists, and markdown tables for visual hierarchy
+- Use plain text for math: NPV = CF1/(1+r) + CF2/(1+r)^2 + ... Do NOT use LaTeX ($, $$, \\frac, \\sum, etc.)
+- Use bold for key terms on first introduction
+- Use markdown tables for comparisons (| Header | Header |)
+- Each concept must have substantial content — multiple paragraphs with sub-sections, NOT a single paragraph`;
 
-**Concept Title**
+const AREAS_PROMPT = `You are an expert exam coach preparing MBA students for their university exams. You have the full lesson notes for this lecture.
 
-Write 4-8 paragraphs covering:
-1. Clear definition with key terminology bolded
-2. Detailed theoretical explanation — explain the WHY, not just the WHAT
-3. Step-by-step processes, formulas, or frameworks where applicable
-4. Real-world examples and applications (use specific MBA-relevant scenarios)
-5. Common misconceptions and pitfalls
-6. How this concept connects to other topics in the course
+Your job is to tell students exactly what to focus on, what examiners look for, and how to structure strong answers. Be SPECIFIC and ACTIONABLE — generic advice like "understand the key concepts" is worthless.
 
-Use rich formatting:
-- Markdown tables for comparisons (| Header | Header |)
-- Mermaid diagrams for processes/flows (using \`\`\`mermaid code blocks)
-- Numbered steps for procedures
-- Bold key terms on first use
+Return ONLY markdown content. Do NOT wrap in JSON or code fences.
 
-Example Mermaid diagram:
-\`\`\`mermaid
-graph TD
-    A[Start] --> B[Step 1]
-    B --> C[Step 2]
-    C --> D[Result]
-\`\`\`
+FORMATTING RULES:
+- Your VERY FIRST LINE must be an area title in bold: **Area Title**
+- Write 5-7 exam focus areas, each starting with **Area Title** on its own line
+- Use ### for sub-headings within each area
+- Do NOT use LaTeX ($, $$, \\frac, etc.). Use plain text for any math.
 
-## areasOfConcentration — EXAM FOCUS AREAS
+For each focus area, cover:
 
-For each area (5-7 per lecture), write a substantial paragraph covering:
-- What examiners specifically test on this topic
-- Common mistakes students make in exams
-- How to structure a strong exam answer
-- Key terms and definitions that MUST appear in answers
-- Specific frameworks or models to reference
+### What Examiners Test
+Specific aspects examiners focus on — name the exact type of question they'd ask.
 
-## examQuestions — PRACTICE QUESTIONS
+### Common Mistakes to Avoid
+- Concrete mistakes with explanations of why they cost marks
+
+### How to Structure a Strong Answer
+Step-by-step structure for answering exam questions on this topic.
+
+### Key Terms and Frameworks
+Specific terms, models, and frameworks that MUST appear in a strong answer.`;
+
+const QUESTIONS_PROMPT = `You are a tough but fair university professor creating practice exam questions for MBA students. You have the full lesson notes and exam focus areas.
+
+Every question must test UNDERSTANDING and APPLICATION — not recall. If a student could answer the question by memorizing a definition without understanding it, the question is too easy.
+
+Return ONLY markdown content. Do NOT wrap in JSON or code fences.
+
+FORMATTING RULES:
+- Do NOT use LaTeX ($, $$, \\frac, etc.). Use plain text for any math.
 
 ### Multiple Choice Questions
-10 MCQ questions testing UNDERSTANDING and APPLICATION:
-**Q1.** [Scenario-based question]
-- A) [Plausible option]
+Generate exactly 10 scenario-based MCQ questions. Each question must present a realistic situation.
+**Q1.** [Scenario that requires applying a concept to answer]
+- A) [Plausible option — a common misconception should be one of the wrong answers]
 - B) [Plausible option]
 - C) [Plausible option]
 - D) [Plausible option]
 
-**Answer:** [Letter] — [Thorough explanation of why correct AND why others are wrong]
+**Answer:** [Letter] — [Explain why this is correct AND why each wrong answer is wrong. 2-3 sentences minimum.]
 
 ### Short Answer Questions
-5 questions requiring concept application. Each model answer should be 3-5 sentences.
+Generate exactly 5 questions requiring concept APPLICATION (not just definition).
 
-**Q1.** [Question]
-**Answer:** [Detailed model answer]
+**Q1.** [Question that requires applying knowledge to a specific scenario]
+**Answer:** [Detailed model answer, 3-5 sentences with specific examples]
 
 ### Case Analysis Questions
-2 realistic MBA case scenarios (3-4 paragraph scenario) with analytical questions.
+Generate exactly 2 realistic MBA case scenarios. Each case should be 3-4 paragraphs describing a real-world business situation, followed by analytical questions.
 
-**Answer:** [Comprehensive analysis, 4-6 paragraphs]
+**Q1.** [Detailed case scenario with specific numbers, company details, and market context]
+**Answer:** [Comprehensive analysis applying multiple concepts from the lecture, 4-6 paragraphs]
 
 ### Essay Questions
-2 essay questions mirroring actual university exam questions.
+Generate exactly 2 essay questions that mirror actual university exam questions.
 
-**Answer:** [Structured essay with key points, arguments, conclusion — 5-8 paragraphs]`;
+**Q1.** [Thought-provoking essay question that requires synthesizing multiple concepts]
+**Answer:** [Structured model essay with introduction, key arguments with evidence, and conclusion — 5-8 paragraphs]`;
+
+const REVIEW_PROMPT = `You are a demanding MBA student who has paid a lot of money for this course. You are reviewing the study materials for a single lecture. Be critical but constructive.
+
+For each concept section in the lesson notes, evaluate:
+1. **Clarity (1-5):** Could a beginner with zero background actually understand this? Or does it assume prior knowledge?
+2. **Examples (1-5):** Are there concrete, specific examples? Or is it all abstract theory?
+3. **Depth (1-5):** Does it explain the WHY, or just state facts? Does it build intuition?
+4. **Usefulness (1-5):** Would studying this help pass an exam? Or is it padding?
+
+Return ONLY valid JSON (no markdown wrapping):
+{
+  "overallScore": 1-5,
+  "sections": [
+    {
+      "title": "Section title as it appears in the notes",
+      "clarity": 1-5,
+      "examples": 1-5,
+      "depth": 1-5,
+      "usefulness": 1-5,
+      "feedback": "Specific, actionable feedback — what exactly is wrong and how to fix it"
+    }
+  ],
+  "weakestSections": ["Titles of sections scoring below 3 on any dimension"],
+  "overallFeedback": "Summary of the biggest issues across all sections"
+}`;
 
 // ── Types ──
 
 interface LectureOutline {
   title: string;
   description: string;
+  narrativeArc?: string;
   topicsCovered: string[];
+  openingHook?: string;
+  keyTakeaways?: string[];
 }
 
-interface LectureContent {
-  keyConcepts: string;
-  areasOfConcentration: string;
-  examQuestions: string;
+interface ComprehensionAnalysis {
+  courseSubject: string;
+  coreThemes: string[];
+  topics: {
+    name: string;
+    importance: string;
+    prerequisites: string[];
+    keyInsights: string[];
+    commonMisconceptions: string[];
+    sourceDepth: string;
+  }[];
+  pedagogicalNotes: string;
 }
 
-interface TopicEntry {
-  name: string;
-  summary: string;
-  keyTerms: string[];
+interface ReviewResult {
+  overallScore: number;
+  sections: {
+    title: string;
+    clarity: number;
+    examples: number;
+    depth: number;
+    usefulness: number;
+    feedback: string;
+  }[];
+  weakestSections: string[];
+  overallFeedback: string;
 }
 
 // ── Utilities ──
@@ -164,14 +232,11 @@ function chunkText(text: string, maxChars: number): string[] {
       break;
     }
 
-    // Find a paragraph break near the max to split cleanly
     let splitAt = remaining.lastIndexOf("\n\n", maxChars);
     if (splitAt < maxChars * 0.5) {
-      // No good paragraph break — try single newline
       splitAt = remaining.lastIndexOf("\n", maxChars);
     }
     if (splitAt < maxChars * 0.5) {
-      // No good break at all — hard cut
       splitAt = maxChars;
     }
 
@@ -189,36 +254,69 @@ function findRelevantChunks(
 ): string {
   if (chunks.length === 1) return chunks[0];
 
-  // Score each chunk by how many topic keywords it contains
-  const lowerTopics = topics.map((t) => t.toLowerCase());
+  const lowerTopics = topics.map((t) => t.toLowerCase().trim());
   const scored = chunks.map((chunk, idx) => {
     const lowerChunk = chunk.toLowerCase();
-    const score = lowerTopics.filter((t) =>
-      t.split(/\s+/).some((word) => word.length > 3 && lowerChunk.includes(word))
-    ).length;
+    let score = 0;
+    for (const topic of lowerTopics) {
+      if (lowerChunk.includes(topic)) {
+        score += 3;
+        continue;
+      }
+      const words = topic.split(/\s+/).filter((w) => w.length >= 2);
+      const wordMatches = words.filter((w) => lowerChunk.includes(w)).length;
+      if (wordMatches > 0) score += wordMatches;
+    }
     return { chunk, idx, score };
   });
 
-  // Sort by relevance score descending
   scored.sort((a, b) => b.score - a.score);
 
-  // Take chunks until we hit the max
   let combined = "";
   for (const { chunk } of scored) {
     if (combined.length + chunk.length > maxChars) break;
     combined += (combined ? "\n\n" : "") + chunk;
   }
 
-  return combined || scored[0].chunk; // Fallback to highest-scored chunk
+  return combined || scored[0].chunk;
 }
 
-async function callClaude(
-  system: string,
-  userMessage: string,
-  maxTokens: number
-): Promise<string> {
+async function callClaude(opts: {
+  system: string;
+  userMessage: string;
+  maxTokens: number;
+  thinking?: boolean;
+  thinkingBudget?: number;
+}): Promise<string> {
+  const { system, userMessage, maxTokens, thinking, thinkingBudget } = opts;
+
+  if (thinking) {
+    // Extended thinking — must use streaming (non-streaming times out after 10min)
+    const stream = anthropic.messages.stream({
+      model: MODEL,
+      max_tokens: maxTokens + (thinkingBudget || 10000),
+      thinking: { type: "enabled", budget_tokens: thinkingBudget || 10000 },
+      system,
+      messages: [{ role: "user", content: userMessage }],
+    });
+
+    const response = await stream.finalMessage();
+
+    // Extract the text block (skip thinking blocks)
+    for (const block of response.content) {
+      if (block.type === "text") {
+        let text = block.text.trim();
+        const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (match) text = match[1].trim();
+        return text;
+      }
+    }
+    throw new Error("No text block in thinking response");
+  }
+
+  // Standard call — use streaming for non-thinking requests
   const stream = anthropic.messages.stream({
-    model: "claude-sonnet-4-20250514",
+    model: MODEL,
     max_tokens: maxTokens,
     system,
     messages: [{ role: "user", content: userMessage }],
@@ -235,12 +333,40 @@ async function callClaude(
   return text;
 }
 
-function unescapeJson(str: string): string {
-  return str
-    .replace(/\\n/g, "\n")
-    .replace(/\\t/g, "\t")
-    .replace(/\\"/g, '"')
-    .replace(/\\\\/g, "\\");
+function parseContentResponse(raw: string): string {
+  if (raw.startsWith("{") || raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed.content || "";
+    } catch {
+      const start = raw.indexOf('"content"');
+      if (start !== -1) {
+        const valueStart = raw.indexOf('"', raw.indexOf(":", start) + 1) + 1;
+        const valueEnd = raw.lastIndexOf('"');
+        if (valueStart > 0 && valueEnd > valueStart) {
+          try {
+            return JSON.parse(`"${raw.slice(valueStart, valueEnd)}"`);
+          } catch {
+            return raw.slice(valueStart, valueEnd)
+              .replace(/\\n/g, "\n")
+              .replace(/\\t/g, "\t")
+              .replace(/\\"/g, '"')
+              .replace(/\\\\/g, "\\");
+          }
+        }
+      }
+    }
+  }
+  return raw;
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0
+    ? sorted[mid]
+    : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 // ── Main Generation Function ──
@@ -284,16 +410,13 @@ export async function generateCourseLectures(
       const upload = uploads[i];
 
       if (upload.extractedText) {
-        // Use cached text
         textSections.push(`--- Source: ${upload.fileName} ---\n\n${upload.extractedText}`);
       } else {
-        // Extract and cache
         await updateProgress(`Extracting text from ${upload.fileName} (${i + 1}/${uploads.length})...`);
         const buffer = await getObjectBuffer(upload.r2Key);
         const text = await extractText(buffer, upload.fileType);
         textSections.push(`--- Source: ${upload.fileName} ---\n\n${text}`);
 
-        // Cache the extracted text
         await db
           .update(courseUploads)
           .set({ extractedText: text })
@@ -302,144 +425,463 @@ export async function generateCourseLectures(
     }
 
     const combinedText = textSections.join("\n\n");
-
-    // ── Step 2: Chunk if needed + extract topics ──
     const chunks = chunkText(combinedText, MAX_CHUNK_CHARS);
-    let outlineInput: string;
+
+    // ── Agent Step 1: Deep Comprehension ──
+    await updateProgress("Analyzing source materials deeply...");
+
+    let comprehension: ComprehensionAnalysis;
 
     if (chunks.length === 1) {
-      // Small enough — send directly
-      outlineInput = combinedText;
-    } else {
-      // Large content — extract topics from each chunk then merge
-      await updateProgress(`Content split into ${chunks.length} chunks. Analyzing topics...`);
-
-      const allTopics: TopicEntry[] = [];
-
-      for (let i = 0; i < chunks.length; i++) {
-        await updateProgress(`Analyzing chunk ${i + 1} of ${chunks.length}...`);
-
-        const topicJson = await callClaude(
-          TOPIC_EXTRACTION_PROMPT,
-          `List all topics covered in this text:\n\n${chunks[i]}`,
-          8192
-        );
-
-        try {
-          const parsed: { topics: TopicEntry[] } = JSON.parse(topicJson);
-          if (parsed.topics) allTopics.push(...parsed.topics);
-        } catch {
-          console.warn(`Failed to parse topics from chunk ${i + 1}`);
-        }
-      }
-
-      // Deduplicate topics by name similarity
-      const uniqueTopics: TopicEntry[] = [];
-      for (const topic of allTopics) {
-        const exists = uniqueTopics.some(
-          (t) => t.name.toLowerCase() === topic.name.toLowerCase()
-        );
-        if (!exists) uniqueTopics.push(topic);
-      }
-
-      await updateProgress(`Found ${uniqueTopics.length} unique topics. Planning lecture structure...`);
-
-      // Build a summary string for the outline prompt
-      outlineInput = uniqueTopics
-        .map((t) => `**${t.name}**: ${t.summary} (Key terms: ${t.keyTerms.join(", ")})`)
-        .join("\n\n");
-    }
-
-    // ── Step 3: Pass 1 — Get lecture outline ──
-    await updateProgress("Planning lecture structure...");
-
-    const outlineJson = await callClaude(
-      OUTLINE_PROMPT,
-      `Analyze this content and determine the lecture structure:\n\n${outlineInput}`,
-      4096
-    );
-
-    const outline: { lectures: LectureOutline[] } = JSON.parse(outlineJson);
-    if (!outline.lectures?.length) throw new Error("AI returned no lecture outline");
-
-    await updateProgress(`Planned ${outline.lectures.length} lectures. Starting content generation...`);
-
-    // ── Step 4: Pass 2 — Generate each lecture ──
-    const defaultModuleId = await getOrCreateDefaultModule(courseId);
-
-    // Delete existing lectures in default module
-    await db.delete(lectures).where(eq(lectures.moduleId, defaultModuleId));
-
-    let lecturesCreated = 0;
-
-    for (let i = 0; i < outline.lectures.length; i++) {
-      const lec = outline.lectures[i];
-      await updateProgress(`Generating lecture ${i + 1} of ${outline.lectures.length}: ${lec.title}`);
+      // All content fits — analyze in one pass with extended thinking
+      const analysisJson = await callClaude({
+        system: COMPREHENSION_PROMPT,
+        userMessage: `Analyze this course material thoroughly:\n\n${combinedText}`,
+        maxTokens: 8192,
+        thinking: true,
+        thinkingBudget: 10000,
+      });
 
       try {
-        // Find relevant content for this lecture's topics
-        const relevantText = findRelevantChunks(chunks, lec.topicsCovered, MAX_CHUNK_CHARS);
+        comprehension = JSON.parse(analysisJson);
+      } catch {
+        console.warn("Comprehension parse failed, using fallback");
+        comprehension = {
+          courseSubject: "Course Materials",
+          coreThemes: [],
+          topics: [],
+          pedagogicalNotes: "",
+        };
+      }
+    } else {
+      // Chunked content — analyze each chunk then merge
+      await updateProgress(`Content split into ${chunks.length} parts. Analyzing each...`);
 
-        const lectureJson = await callClaude(
-          LECTURE_PROMPT,
-          `Generate comprehensive lesson content for this lecture:
+      const chunkAnalyses: ComprehensionAnalysis[] = [];
 
-**Lecture Title:** ${lec.title}
-**Description:** ${lec.description}
-**Topics to Cover:** ${lec.topicsCovered.join(", ")}
+      // Analyze chunks in parallel (batches of 3)
+      for (let i = 0; i < chunks.length; i += 3) {
+        const batch = chunks.slice(i, i + 3);
+        await updateProgress(`Analyzing parts ${i + 1}-${Math.min(i + batch.length, chunks.length)} of ${chunks.length}...`);
 
-Use the following source materials as the basis for your content. Extract and expand on all relevant information:\n\n${relevantText}`,
-          64000
+        const results = await Promise.allSettled(
+          batch.map((chunk) =>
+            callClaude({
+              system: COMPREHENSION_PROMPT,
+              userMessage: `Analyze this course material thoroughly:\n\n${chunk}`,
+              maxTokens: 8192,
+              thinking: true,
+              thinkingBudget: 8000,
+            })
+          )
         );
 
-        let lectureContent: LectureContent;
-        try {
-          lectureContent = JSON.parse(lectureJson);
-        } catch {
-          // Salvage partial content from truncated JSON
-          const kcMatch = lectureJson.match(/"keyConcepts"\s*:\s*"([\s\S]*?)(?:"\s*,\s*"areasOfConcentration|"?\s*}?\s*$)/);
-          const aocMatch = lectureJson.match(/"areasOfConcentration"\s*:\s*"([\s\S]*?)(?:"\s*,\s*"examQuestions|"?\s*}?\s*$)/);
-          const eqMatch = lectureJson.match(/"examQuestions"\s*:\s*"([\s\S]*?)(?:"\s*}?\s*$)/);
-
-          lectureContent = {
-            keyConcepts: kcMatch ? unescapeJson(kcMatch[1]) : "",
-            areasOfConcentration: aocMatch ? unescapeJson(aocMatch[1]) : "",
-            examQuestions: eqMatch ? unescapeJson(eqMatch[1]) : "",
-          };
-
-          if (!lectureContent.keyConcepts) {
-            console.warn(`Skipping lecture "${lec.title}" — could not parse content`);
-            continue;
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j];
+          if (result.status === "fulfilled") {
+            try {
+              chunkAnalyses.push(JSON.parse(result.value));
+            } catch {
+              console.warn(`Failed to parse analysis from chunk ${i + j + 1}`);
+            }
+          } else {
+            console.warn(`Chunk ${i + j + 1} analysis failed:`, result.reason);
           }
         }
+      }
 
-        const [createdLecture] = await db
-          .insert(lectures)
-          .values({
-            moduleId: defaultModuleId,
-            title: lec.title,
-            description: lec.description || null,
-            orderIndex: i,
-            aiStatus: "done",
-          })
-          .returning();
+      // Merge chunk analyses
+      const allTopics = chunkAnalyses.flatMap((a) => a.topics || []);
 
-        await db.insert(studyAids).values({
-          lectureId: createdLecture.id,
-          keyConcepts: lectureContent.keyConcepts,
-          areasOfConcentration: lectureContent.areasOfConcentration,
-          examQuestions: lectureContent.examQuestions,
+      // Deduplicate topics by name similarity
+      function normalizeName(name: string): string {
+        return name.toLowerCase().trim()
+          .replace(/[''"""]/g, "")
+          .replace(/\s+/g, " ");
+      }
+
+      const uniqueTopics = allTopics.filter((topic, idx) => {
+        const norm = normalizeName(topic.name);
+        return !allTopics.slice(0, idx).some((t) => {
+          const tNorm = normalizeName(t.name);
+          return tNorm === norm || tNorm.includes(norm) || norm.includes(tNorm);
+        });
+      });
+
+      comprehension = {
+        courseSubject: chunkAnalyses[0]?.courseSubject || "Course Materials",
+        coreThemes: [...new Set(chunkAnalyses.flatMap((a) => a.coreThemes || []))],
+        topics: uniqueTopics,
+        pedagogicalNotes: chunkAnalyses.map((a) => a.pedagogicalNotes).filter(Boolean).join("\n\n"),
+      };
+    }
+
+    await updateProgress(`Identified ${comprehension.topics.length} topics in ${comprehension.courseSubject}. Planning curriculum...`);
+
+    // ── Agent Step 2: Curriculum Planning ──
+    await updateProgress("Designing curriculum structure...");
+
+    const comprehensionSummary = JSON.stringify(comprehension, null, 2);
+
+    const curriculumJson = await callClaude({
+      system: CURRICULUM_PROMPT,
+      userMessage: `Here is the deep analysis of the course materials:\n\n${comprehensionSummary}\n\nDesign the optimal lecture sequence.`,
+      maxTokens: 4096,
+      thinking: true,
+      thinkingBudget: 8000,
+    });
+
+    let outline: { lectures: LectureOutline[] };
+    try {
+      outline = JSON.parse(curriculumJson);
+    } catch {
+      console.warn("Curriculum JSON parse failed, retrying...");
+      const retryJson = await callClaude({
+        system: CURRICULUM_PROMPT,
+        userMessage: `IMPORTANT: Return ONLY valid JSON.\n\nHere is the analysis:\n\n${comprehensionSummary}\n\nDesign the lecture sequence.`,
+        maxTokens: 4096,
+        thinking: true,
+        thinkingBudget: 4000,
+      });
+      try {
+        outline = JSON.parse(retryJson);
+      } catch {
+        outline = {
+          lectures: [{
+            title: comprehension.courseSubject || "Course Overview",
+            description: "Comprehensive overview of all course materials",
+            topicsCovered: comprehension.topics.map((t) => t.name),
+          }],
+        };
+      }
+    }
+    if (!outline.lectures?.length) throw new Error("AI returned no lecture outline");
+
+    await updateProgress(`Planned ${outline.lectures.length} lectures. Generating content...`);
+
+    // ── Agent Steps 3-5: Generate each lecture ──
+    const defaultModuleId = await getOrCreateDefaultModule(courseId);
+
+    let lecturesCreated = 0;
+    const createdLectureIds: { lectureId: string; outline: LectureOutline }[] = [];
+    const total = outline.lectures.length;
+
+    async function generateOneLecture(lec: LectureOutline, index: number) {
+      const relevantText = findRelevantChunks(chunks, lec.topicsCovered, MAX_CHUNK_CHARS);
+      const shortRelevantText = findRelevantChunks(chunks, lec.topicsCovered, Math.floor(MAX_CHUNK_CHARS / 2));
+
+      // Find relevant topic analysis from comprehension
+      const relevantTopics = comprehension.topics.filter((t) =>
+        lec.topicsCovered.some((covered) =>
+          covered.toLowerCase().includes(t.name.toLowerCase()) ||
+          t.name.toLowerCase().includes(covered.toLowerCase())
+        )
+      );
+
+      const topicContext = relevantTopics.length > 0
+        ? `\n\n--- TOPIC ANALYSIS (from deep reading of source materials) ---\n${relevantTopics.map((t) =>
+          `**${t.name}** (${t.importance} importance)\n- Key insights: ${t.keyInsights.join("; ")}\n- Common misconceptions: ${t.commonMisconceptions.join("; ")}\n- Source depth: ${t.sourceDepth}`
+        ).join("\n\n")}`
+        : "";
+
+      // ── Step 3: Content Writing with Extended Thinking ──
+      await updateProgress(`Writing lecture ${index + 1} of ${total}: ${lec.title}...`);
+
+      const lectureContext = `**Lecture Title:** ${lec.title}
+**Description:** ${lec.description}
+${lec.narrativeArc ? `**Narrative Arc:** ${lec.narrativeArc}` : ""}
+${lec.openingHook ? `**Opening Hook (use this to inspire your first concept):** ${lec.openingHook}` : ""}
+**Topics to Cover:** ${lec.topicsCovered.join(", ")}
+${lec.keyTakeaways ? `**Key Takeaways Students Must Leave With:** ${lec.keyTakeaways.join("; ")}` : ""}
+${topicContext}
+
+--- SOURCE MATERIALS ---
+
+Use these as the factual basis for your content. Extract, expand, and explain all relevant information:
+
+${relevantText}`;
+
+      const keyConcepts = parseContentResponse(
+        await callClaude({
+          system: CONTENT_PROMPT,
+          userMessage: lectureContext,
+          maxTokens: 32000,
+          thinking: true,
+          thinkingBudget: 16000,
+        })
+      );
+
+      if (!keyConcepts) {
+        console.warn(`Skipping lecture "${lec.title}" — content generation returned empty`);
+        return;
+      }
+
+      // ── Steps 4: Areas + Questions in parallel (with extended thinking) ──
+      await updateProgress(`Creating exam prep & questions for lecture ${index + 1}: ${lec.title}...`);
+
+      const followUpContext = `**Lecture Title:** ${lec.title}
+**Description:** ${lec.description}
+**Topics Covered:** ${lec.topicsCovered.join(", ")}
+
+--- SOURCE MATERIALS ---
+
+${shortRelevantText}
+
+--- LESSON NOTES FOR THIS LECTURE ---
+
+${keyConcepts}`;
+
+      const [areasOfConcentration, examQuestions] = await Promise.all([
+        callClaude({
+          system: AREAS_PROMPT,
+          userMessage: followUpContext,
+          maxTokens: 16000,
+          thinking: true,
+          thinkingBudget: 6000,
+        }).then(parseContentResponse),
+        callClaude({
+          system: QUESTIONS_PROMPT,
+          userMessage: followUpContext,
+          maxTokens: 16000,
+          thinking: true,
+          thinkingBudget: 8000,
+        }).then(parseContentResponse),
+      ]);
+
+      // ── Step 5: Quality Review ──
+      await updateProgress(`Reviewing quality of lecture ${index + 1}: ${lec.title}...`);
+
+      let finalKeyConcepts = keyConcepts;
+      let finalAreas = areasOfConcentration;
+      let finalQuestions = examQuestions;
+
+      try {
+        const reviewJson = await callClaude({
+          system: REVIEW_PROMPT,
+          userMessage: `Review these study materials for the lecture "${lec.title}":\n\n--- KEY CONCEPTS ---\n${keyConcepts}\n\n--- EXAM FOCUS AREAS ---\n${areasOfConcentration}`,
+          maxTokens: 4096,
+          thinking: true,
+          thinkingBudget: 10000,
         });
 
-        lecturesCreated++;
-        await updateProgress(`Completed ${lecturesCreated} of ${outline.lectures.length} lectures`);
+        let review: ReviewResult;
+        try {
+          review = JSON.parse(reviewJson);
+        } catch {
+          review = { overallScore: 3, sections: [], weakestSections: [], overallFeedback: "" };
+        }
+
+        // Regenerate weak sections if overall quality is poor
+        if (review.overallScore < 3 || review.weakestSections.length > 2) {
+          await updateProgress(`Improving weak sections in lecture ${index + 1}: ${lec.title}...`);
+
+          const weakFeedback = review.sections
+            .filter((s) => Math.min(s.clarity, s.examples, s.depth, s.usefulness) < 3)
+            .map((s) => `"${s.title}": ${s.feedback}`)
+            .join("\n");
+
+          const improvementContext = `${lectureContext}
+
+--- QUALITY REVIEW FEEDBACK ---
+The following sections need improvement:
+${weakFeedback || review.overallFeedback}
+
+Rewrite ALL concept sections, paying special attention to the weak areas identified above. Make sure every concept has concrete examples, explains the WHY, and would be understandable to a beginner.`;
+
+          const improved = parseContentResponse(
+            await callClaude({
+              system: CONTENT_PROMPT,
+              userMessage: improvementContext,
+              maxTokens: 32000,
+              thinking: true,
+              thinkingBudget: 12000,
+            })
+          );
+
+          if (improved && improved.length > keyConcepts.length * 0.5) {
+            finalKeyConcepts = improved;
+
+            // Regenerate areas and questions based on improved content
+            const improvedFollowUp = `**Lecture Title:** ${lec.title}
+**Description:** ${lec.description}
+**Topics Covered:** ${lec.topicsCovered.join(", ")}
+
+--- SOURCE MATERIALS ---
+
+${shortRelevantText}
+
+--- LESSON NOTES FOR THIS LECTURE ---
+
+${improved}`;
+
+            const [improvedAreas, improvedQuestions] = await Promise.all([
+              callClaude({
+                system: AREAS_PROMPT,
+                userMessage: improvedFollowUp,
+                maxTokens: 16000,
+                thinking: true,
+                thinkingBudget: 4000,
+              }).then(parseContentResponse),
+              callClaude({
+                system: QUESTIONS_PROMPT,
+                userMessage: improvedFollowUp,
+                maxTokens: 16000,
+                thinking: true,
+                thinkingBudget: 4000,
+              }).then(parseContentResponse),
+            ]);
+
+            if (improvedAreas) finalAreas = improvedAreas;
+            if (improvedQuestions) finalQuestions = improvedQuestions;
+          }
+        }
       } catch (err) {
-        console.error(`Failed to generate lecture "${lec.title}":`, err);
+        console.warn(`Quality review failed for "${lec.title}", using initial content:`, err);
+      }
+
+      // Also run structural validation (catches parsing issues)
+      // Check concepts first — if they need regen, it cascades to areas+questions
+      const conceptSlides = parseSlides(finalKeyConcepts, null).filter((s) => s.section === "concept");
+
+      if (conceptSlides.length < 4 || median(conceptSlides.map((s) => s.body.trim().length)) < 200) {
+        console.log(`Structural issues in concepts for "${lec.title}" (${conceptSlides.length} slides), regenerating...`);
+        try {
+          const regenConcepts = parseContentResponse(
+            await callClaude({
+              system: CONTENT_PROMPT,
+              userMessage: lectureContext,
+              maxTokens: 32000,
+              thinking: true,
+              thinkingBudget: 12000,
+            })
+          );
+          if (regenConcepts && parseSlides(regenConcepts, null).length >= 4) {
+            finalKeyConcepts = regenConcepts;
+
+            // Cascade: regenerate areas and questions to match new content
+            const cascadeContext = `**Lecture Title:** ${lec.title}
+**Description:** ${lec.description}
+**Topics Covered:** ${lec.topicsCovered.join(", ")}
+
+--- SOURCE MATERIALS ---
+
+${shortRelevantText}
+
+--- LESSON NOTES FOR THIS LECTURE ---
+
+${regenConcepts}`;
+
+            const [cascadeAreas, cascadeQuestions] = await Promise.all([
+              callClaude({
+                system: AREAS_PROMPT,
+                userMessage: cascadeContext,
+                maxTokens: 16000,
+                thinking: true,
+                thinkingBudget: 4000,
+              }).then(parseContentResponse),
+              callClaude({
+                system: QUESTIONS_PROMPT,
+                userMessage: cascadeContext,
+                maxTokens: 16000,
+                thinking: true,
+                thinkingBudget: 4000,
+              }).then(parseContentResponse),
+            ]);
+
+            if (cascadeAreas) finalAreas = cascadeAreas;
+            if (cascadeQuestions) finalQuestions = cascadeQuestions;
+          }
+        } catch (err) {
+          console.warn(`Concept regeneration failed for "${lec.title}":`, err);
+        }
+      }
+
+      // Check questions (re-parse since cascade may have updated finalQuestions)
+      const parsedQuestions = parseQuestions(finalQuestions);
+      const mcqs = parsedQuestions.filter((q) => q.type === "mcq");
+      const mcqsMissingAnswer = mcqs.filter((q) => !q.correctAnswer).length;
+
+      if (parsedQuestions.length < 10 || mcqs.length < 5 || mcqsMissingAnswer > 0) {
+        console.log(`Structural issues in questions for "${lec.title}", regenerating...`);
+        try {
+          const freshContext = `**Lecture Title:** ${lec.title}
+**Description:** ${lec.description}
+**Topics Covered:** ${lec.topicsCovered.join(", ")}
+
+--- SOURCE MATERIALS ---
+
+${shortRelevantText}
+
+--- LESSON NOTES FOR THIS LECTURE ---
+
+${finalKeyConcepts}`;
+
+          const regenQuestions = parseContentResponse(
+            await callClaude({
+              system: QUESTIONS_PROMPT,
+              userMessage: freshContext,
+              maxTokens: 16000,
+              thinking: true,
+              thinkingBudget: 6000,
+            })
+          );
+          if (regenQuestions) finalQuestions = regenQuestions;
+        } catch (err) {
+          console.warn(`Question regeneration failed for "${lec.title}":`, err);
+        }
+      }
+
+      // ── Save to DB ──
+      const [createdLecture] = await db
+        .insert(lectures)
+        .values({
+          moduleId: defaultModuleId,
+          title: lec.title,
+          description: lec.description || null,
+          orderIndex: index,
+          aiStatus: "done",
+        })
+        .returning();
+
+      await db.insert(studyAids).values({
+        lectureId: createdLecture.id,
+        keyConcepts: finalKeyConcepts,
+        areasOfConcentration: finalAreas,
+        examQuestions: finalQuestions,
+      });
+
+      createdLectureIds.push({ lectureId: createdLecture.id, outline: lec });
+      lecturesCreated++;
+      await updateProgress(`Completed lecture ${lecturesCreated} of ${total}: ${lec.title}`);
+    }
+
+    // Process lectures in batches of 4 for parallelism
+    for (let i = 0; i < outline.lectures.length; i += 4) {
+      const batch = outline.lectures.slice(i, i + 4);
+      const results = await Promise.allSettled(
+        batch.map((lec, j) => generateOneLecture(lec, i + j))
+      );
+      for (const result of results) {
+        if (result.status === "rejected") {
+          console.error("Lecture generation failed:", result.reason);
+        }
       }
     }
 
     if (lecturesCreated === 0) {
       throw new Error("Failed to generate any lectures");
+    }
+
+    // Delete old lectures now that new ones are confirmed
+    const newLectureIds = new Set(createdLectureIds.map((l) => l.lectureId));
+    const existingLectures = await db.query.lectures.findMany({
+      where: (l, { eq: e }) => e(l.moduleId, defaultModuleId),
+      columns: { id: true },
+    });
+    for (const existing of existingLectures) {
+      if (!newLectureIds.has(existing.id)) {
+        await db.delete(lectures).where(eq(lectures.id, existing.id));
+      }
     }
 
     await db

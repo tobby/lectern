@@ -44,7 +44,7 @@ export const POST = withAuth(async (req, { user, params }) => {
   const rateLimited = userRateLimit("chat", 30, 60 * 1000, user.sub);
   if (rateLimited) return rateLimited;
 
-  const { message } = await req.json();
+  const { message, slideContext } = await req.json();
 
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     return error("Message is required");
@@ -109,12 +109,12 @@ export const POST = withAuth(async (req, { user, params }) => {
       content: m.content,
     }));
 
-  const systemPrompt = buildChatSystemPrompt(studyAid);
+  const systemPrompt = buildChatSystemPrompt(studyAid, typeof slideContext === "string" ? slideContext : undefined);
 
   // Stream response
   const stream = await anthropic.messages.stream({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 2048,
+    max_tokens: 1024,
     system: systemPrompt,
     messages: conversationHistory,
   });
@@ -180,24 +180,38 @@ export const POST = withAuth(async (req, { user, params }) => {
   });
 });
 
-function buildChatSystemPrompt(
-  studyAid: { keyConcepts: string | null; areasOfConcentration: string | null; examQuestions: string | null } | undefined
-): string {
-  let prompt = `You are a helpful MBA study assistant. You answer questions strictly based on the lecture material provided below. Do not answer questions outside the scope of this lecture content. If asked about something not covered in the material, politely redirect the student to the relevant topic areas.
+const MAX_CONTEXT_CHARS = 15000;
 
-Be concise, accurate, and educational. Use examples from the material when possible.`;
+function buildChatSystemPrompt(
+  studyAid: { keyConcepts: string | null; areasOfConcentration: string | null; examQuestions: string | null } | undefined,
+  slideContext?: string
+): string {
+  let prompt = `You are a helpful MBA study assistant. Answer questions using ONLY the lecture material below. If asked about something not covered, briefly redirect.
+
+RESPONSE RULES:
+- Keep answers SHORT — 2-4 sentences for simple questions, 1-2 short paragraphs max for complex ones.
+- Lead with the direct answer, then explain briefly if needed.
+- Use bullet points for lists instead of long paragraphs.
+- Do NOT repeat the question back. Do NOT use filler phrases like "Great question!" or "Let me explain..."
+- Do NOT use large headings (# or ##). Use **bold** for emphasis and ### only if listing multiple distinct points.
+- When explaining a concept, give the key insight in one sentence, then a brief example if helpful.`;
+
+  if (slideContext) {
+    prompt += `\n\nThe student is currently viewing this section:\n${slideContext}\nPrioritize answering about this topic, but you may reference other parts of the lecture if relevant.`;
+  }
 
   if (studyAid) {
-    prompt += `\n\n--- LECTURE STUDY AID ---\n`;
+    prompt += `\n\n--- LECTURE CONTENT ---\n`;
     if (studyAid.keyConcepts) {
-      prompt += `\n## Key Concepts\n${studyAid.keyConcepts}\n`;
+      const concepts = studyAid.keyConcepts.length > MAX_CONTEXT_CHARS
+        ? studyAid.keyConcepts.slice(0, MAX_CONTEXT_CHARS) + "\n\n[Content truncated for brevity]"
+        : studyAid.keyConcepts;
+      prompt += `\n## Key Concepts\n${concepts}\n`;
     }
     if (studyAid.areasOfConcentration) {
-      prompt += `\n## Areas of Concentration\n${studyAid.areasOfConcentration}\n`;
+      prompt += `\n## Exam Focus Areas\n${studyAid.areasOfConcentration}\n`;
     }
-    if (studyAid.examQuestions) {
-      prompt += `\n## Practice Questions\n${studyAid.examQuestions}\n`;
-    }
+    // examQuestions intentionally omitted — large and not needed for chat
   }
 
   return prompt;

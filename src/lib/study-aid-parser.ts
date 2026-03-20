@@ -69,10 +69,10 @@ function parseSectionIntoSlides(
     const trimmed = block.trim();
     if (!trimmed) continue;
 
-    // Check if block starts with a bold heading: **Title**
-    const boldMatch = trimmed.match(/^\*\*(.+?)\*\*[:\s]*([\s\S]*)/);
+    // Check if block starts with a bold heading: **Title** (with optional colon, space, or newline after)
+    const boldMatch = trimmed.match(/^\*\*(.+?)\*\*[\s:.]*([\s\S]*)/);
     // Or a numbered bold heading: **1. Title** or **Q1.** etc
-    const numberedMatch = trimmed.match(/^\*\*\d+[\.\)]\s*(.+?)\*\*[:\s]*([\s\S]*)/);
+    const numberedMatch = trimmed.match(/^\*\*\d+[\.\)]\s*(.+?)\*\*[\s:.]*([\s\S]*)/);
     // Or a markdown heading
     const headingMatch = trimmed.match(/^#{1,3}\s+(.+)/);
 
@@ -82,14 +82,28 @@ function parseSectionIntoSlides(
     } else if (boldMatch && !trimmed.startsWith("**Answer")) {
       if (current) slides.push({ section, title: current.title, body: current.body.join("\n\n") });
       current = { title: boldMatch[1].trim(), body: boldMatch[2]?.trim() ? [boldMatch[2].trim()] : [] };
-    } else if (headingMatch && !current) {
-      // Heading without prior content starts a new slide
-      current = { title: headingMatch[1].trim(), body: [] };
+    } else if (headingMatch) {
+      const isH2 = trimmed.startsWith('## ') && !trimmed.startsWith('### ');
+      if (isH2) {
+        // ## headings always start a new slide
+        if (current) slides.push({ section, title: current.title, body: current.body.join("\n\n") });
+        current = { title: headingMatch[1].trim(), body: [] };
+      } else if (!current) {
+        // ### heading with no prior content — use as slide title
+        current = { title: headingMatch[1].trim(), body: [] };
+      } else {
+        // ### heading within existing slide — append to body
+        current.body.push(trimmed);
+      }
     } else if (current) {
       current.body.push(trimmed);
     } else {
-      // No heading found yet — create a slide with generic title
-      current = { title: section === "concept" ? "Key Concept" : "Focus Area", body: [trimmed] };
+      // No heading found yet — extract first sentence as title
+      const firstSentence = trimmed.split(/[.!?\n]/)[0].trim();
+      const title = firstSentence.length > 60
+        ? firstSentence.slice(0, 57) + "..."
+        : firstSentence || (section === "concept" ? "Key Concept" : "Focus Area");
+      current = { title, body: [trimmed] };
     }
   }
 
@@ -106,14 +120,14 @@ export function parseQuestions(examQuestions: string | null): Question[] {
   const questions: Question[] = [];
   let id = 0;
 
-  // Split by section headers (### Multiple Choice, ### Short Answer, etc.)
-  const sections = examQuestions.split(/(?=### )/);
+  // Split by section headers (## or ### — AI sometimes uses either)
+  const sections = examQuestions.split(/(?=#{2,3} )/);
 
   for (const section of sections) {
     const trimmed = section.trim();
     if (!trimmed) continue;
 
-    const headerMatch = trimmed.match(/^### (.+)/);
+    const headerMatch = trimmed.match(/^#{2,3} (.+)/);
     const sectionLabel = headerMatch ? headerMatch[1].trim() : "Questions";
     const content = headerMatch ? trimmed.slice(headerMatch[0].length).trim() : trimmed;
 
@@ -147,22 +161,23 @@ function inferQuestionType(label: string): Question["type"] {
 function parseMCQs(content: string, sectionLabel: string): Omit<Question, "id">[] {
   const questions: Omit<Question, "id">[] = [];
 
-  // Split on question patterns: **Q1.** or **Q1)** or **1.**
-  const qBlocks = content.split(/(?=\*\*Q?\d+[\.\)])/);
+  // Split on question patterns: **Q1.** or **Q1)** or **1.** or plain Q1. / 1.
+  const qBlocks = content.split(/(?=(?:\*\*)?Q?\d+[\.\)](?:\*\*)?\s)/);
 
   for (const block of qBlocks) {
     const trimmed = block.trim();
     if (!trimmed) continue;
 
-    // Extract question text
-    const qMatch = trimmed.match(/\*\*Q?\d+[\.\)]\*?\*?\s*([\s\S]*?)(?=\n\s*[-•]?\s*[A-D]\))/);
+    // Extract question text — match bold or plain numbered questions
+    // Look ahead for options in A) or A. format
+    const qMatch = trimmed.match(/(?:\*\*)?Q?\d+[\.\)](?:\*\*)?\s*([\s\S]*?)(?=\n\s*[-•]?\s*[A-D][)\.])/);
     if (!qMatch) continue;
 
     const questionText = qMatch[1].trim();
 
-    // Extract options
+    // Extract options — support A) and A. formats
     const options: string[] = [];
-    const optionMatches = trimmed.matchAll(/[-•]?\s*([A-D])\)\s*(.+)/g);
+    const optionMatches = trimmed.matchAll(/[-•]?\s*\*?\*?\(?([A-D])[)\.\:]\*?\*?\s*(.+)/g);
     for (const m of optionMatches) {
       options.push(`${m[1]}) ${m[2].trim()}`);
     }
@@ -170,7 +185,7 @@ function parseMCQs(content: string, sectionLabel: string): Omit<Question, "id">[
     // Extract answer
     let correctAnswer = "";
     let explanation = "";
-    const answerMatch = trimmed.match(/\*\*Answer:\*\*\s*([A-D])[\s—–\-]*(.*)$/m);
+    const answerMatch = trimmed.match(/\*\*Answer:?\*\*\s*([A-D])[\s—–\-]*([\s\S]*)$/);
     if (answerMatch) {
       correctAnswer = answerMatch[1];
       explanation = answerMatch[2]?.trim() || "";
@@ -198,22 +213,22 @@ function parseFreeResponse(
 ): Omit<Question, "id">[] {
   const questions: Omit<Question, "id">[] = [];
 
-  // Split on question patterns
-  const qBlocks = content.split(/(?=\*\*Q?\d+[\.\)])/);
+  // Split on question patterns — bold or plain numbered
+  const qBlocks = content.split(/(?=(?:\*\*)?Q?\d+[\.\)](?:\*\*)?\s)/);
 
   for (const block of qBlocks) {
     const trimmed = block.trim();
     if (!trimmed) continue;
 
-    // Extract question
-    const qMatch = trimmed.match(/\*\*Q?\d+[\.\)]\*?\*?\s*([\s\S]*?)(?=\*\*Answer:\*\*|$)/);
+    // Extract question — bold or plain numbered, up to the answer
+    const qMatch = trimmed.match(/(?:\*\*)?Q?\d+[\.\)](?:\*\*)?\s*([\s\S]*?)(?=\*\*Answer:?\*\*|$)/);
     if (!qMatch) continue;
 
     const questionText = qMatch[1].trim();
 
     // Extract model answer
     let modelAnswer = "";
-    const answerMatch = trimmed.match(/\*\*Answer:\*\*\s*([\s\S]*?)$/);
+    const answerMatch = trimmed.match(/\*\*Answer:?\*\*\s*([\s\S]*?)$/);
     if (answerMatch) {
       modelAnswer = answerMatch[1].trim();
     }

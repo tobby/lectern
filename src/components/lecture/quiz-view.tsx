@@ -24,6 +24,13 @@ export default function QuizView({
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
   const [showSummary, setShowSummary] = useState(false);
 
+  // Reset state when questions change (e.g., navigating to a different lecture)
+  useEffect(() => {
+    setMcqAnswers({});
+    setRevealed({});
+    setShowSummary(false);
+  }, [questions]);
+
   const question = questions[currentQuestion];
   const isFirst = currentQuestion === 0;
   const isLast = currentQuestion === questions.length - 1;
@@ -82,13 +89,20 @@ export default function QuizView({
     onQuestionChange(0);
   }
 
+  // Extract letter from option string like "A) Option text" → "A"
+  function getSelectedLetter(option: string | undefined): string {
+    if (!option) return "";
+    const m = option.match(/^([A-Da-d])\)/);
+    return m ? m[1].toUpperCase() : "";
+  }
+
   // Score calculation
   const mcqQuestions = questions.filter((q) => q.type === "mcq");
   const answeredMCQs = mcqQuestions.filter(
     (q) => mcqAnswers[q.id]?.submitted
   );
   const correctMCQs = answeredMCQs.filter(
-    (q) => mcqAnswers[q.id]?.selected?.charAt(0) === q.correctAnswer
+    (q) => getSelectedLetter(mcqAnswers[q.id]?.selected) === q.correctAnswer
   );
 
   if (questions.length === 0) {
@@ -111,51 +125,51 @@ export default function QuizView({
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 flex items-start justify-center">
-          <div className="w-full rounded-2xl bg-white border border-gray-200 shadow-lg overflow-hidden">
-            <div className="h-1.5 bg-gradient-to-r from-amber-500 to-orange-500" />
-            <div className="p-8 lg:p-10">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+          <div className="w-full rounded-xl bg-white border border-gray-200 shadow-sm overflow-hidden">
+            <div className="h-1 bg-gradient-to-r from-amber-500 to-orange-500" />
+            <div className="px-5 py-4">
+              <h2 className="text-base font-bold text-gray-900 mb-1">
                 Quiz Complete
               </h2>
-              <p className="text-gray-500 mb-8">
+              <p className="text-xs text-gray-500 mb-4">
                 Here&apos;s how you did on the practice questions.
               </p>
 
               {/* Score card */}
               {mcqQuestions.length > 0 && (
-                <div className="mb-8 rounded-xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 p-6">
-                  <div className="flex items-center gap-6">
-                    <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-sm">
-                      <span className="text-2xl font-bold text-indigo-600">
+                <div className="mb-4 rounded-lg bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 p-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm">
+                      <span className="text-lg font-bold text-indigo-600">
                         {percentage}%
                       </span>
                     </div>
                     <div>
-                      <p className="text-lg font-semibold text-gray-900">
+                      <p className="text-sm font-semibold text-gray-900">
                         {correctMCQs.length} of {mcqQuestions.length} correct
                       </p>
-                      <p className="text-sm text-gray-500">Multiple choice questions</p>
+                      <p className="text-xs text-gray-500">Multiple choice questions</p>
                     </div>
                   </div>
                 </div>
               )}
 
               {/* Question list */}
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {questions.map((q, idx) => {
                   const mcq = mcqAnswers[q.id];
                   const isCorrect =
-                    q.type === "mcq" && mcq?.submitted && mcq.selected?.charAt(0) === q.correctAnswer;
+                    q.type === "mcq" && mcq?.submitted && getSelectedLetter(mcq.selected) === q.correctAnswer;
                   const isWrong =
-                    q.type === "mcq" && mcq?.submitted && mcq.selected?.charAt(0) !== q.correctAnswer;
+                    q.type === "mcq" && mcq?.submitted && getSelectedLetter(mcq.selected) !== q.correctAnswer;
 
                   return (
                     <button
                       key={q.id}
                       onClick={() => { setShowSummary(false); onQuestionChange(idx); }}
-                      className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-gray-50 transition-colors"
                     >
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-medium">
                         {isCorrect ? (
                           <span className="text-green-600">✓</span>
                         ) : isWrong ? (
@@ -164,11 +178,11 @@ export default function QuizView({
                           <span className="text-gray-400">{idx + 1}</span>
                         )}
                       </span>
-                      <span className="flex-1 text-sm text-gray-700 truncate">
+                      <span className="flex-1 text-xs text-gray-700 truncate">
                         {q.question.slice(0, 80)}
                         {q.question.length > 80 ? "..." : ""}
                       </span>
-                      <span className="text-[10px] font-medium text-gray-400 uppercase">
+                      <span className="text-[9px] font-medium text-gray-400 uppercase">
                         {q.type.replace("_", " ")}
                       </span>
                     </button>
@@ -176,10 +190,10 @@ export default function QuizView({
                 })}
               </div>
 
-              <div className="mt-8 flex gap-3">
+              <div className="mt-4 flex gap-3">
                 <button
                   onClick={handleRetry}
-                  className="rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
                 >
                   Retry Quiz
                 </button>
@@ -200,16 +214,16 @@ export default function QuizView({
   return (
     <div className="flex flex-col h-full">
       {/* Progress */}
-      <div className="shrink-0 mb-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-gray-500">
+      <div className="shrink-0 mb-2">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] font-medium text-gray-500">
             {question.sectionLabel}
           </span>
-          <span className="text-xs text-gray-400 font-medium">
+          <span className="text-[10px] text-gray-400 font-medium">
             Question {currentQuestion + 1} of {questions.length}
           </span>
         </div>
-        <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+        <div className="h-1 w-full rounded-full bg-gray-100 overflow-hidden">
           <div
             className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all duration-500 ease-out"
             style={{ width: `${progress}%` }}
@@ -221,18 +235,18 @@ export default function QuizView({
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div
           key={currentQuestion}
-          className="w-full rounded-2xl bg-white border border-gray-200 shadow-lg overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300"
+          className="w-full rounded-xl bg-white border border-gray-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300"
         >
-          <div className="h-1.5 bg-gradient-to-r from-amber-500 to-orange-500" />
-          <div className="p-8 lg:p-10">
+          <div className="h-1 bg-gradient-to-r from-amber-500 to-orange-500" />
+          <div className="px-5 py-4">
             {/* Type badge */}
-            <span className="inline-block text-[11px] font-semibold uppercase tracking-wider mb-4 text-amber-600">
+            <span className="inline-block text-[9px] font-semibold uppercase tracking-wider mb-2 text-amber-600">
               {question.type.replace("_", " ")}
             </span>
 
             {/* Question */}
             <div
-              className="text-lg lg:text-xl font-medium text-gray-900 mb-8 leading-relaxed"
+              className="text-sm font-medium text-gray-900 mb-4 leading-relaxed"
               dangerouslySetInnerHTML={{
                 __html: markdownToHtml(question.question),
               }}
@@ -240,9 +254,10 @@ export default function QuizView({
 
             {/* MCQ options */}
             {question.type === "mcq" && question.options && (
-              <div className="space-y-3 mb-6">
+              <div className="space-y-2 mb-4">
                 {question.options.map((option, idx) => {
-                  const letter = option.charAt(0);
+                  const letterMatch = option.match(/^([A-Da-d])\)\s*/);
+                  const letter = letterMatch?.[1]?.toUpperCase() || "";
                   const isSelected = mcqAnswer?.selected === option;
                   const isSubmitted = mcqAnswer?.submitted;
                   const isCorrectOption = letter === question.correctAnswer;
@@ -261,10 +276,10 @@ export default function QuizView({
                       key={idx}
                       onClick={() => handleMCQSelect(question.id, option)}
                       disabled={isSubmitted}
-                      className={`flex w-full items-center gap-4 rounded-xl border-2 px-5 py-4 text-left transition-all ${optionStyle}`}
+                      className={`flex w-full items-center gap-3 rounded-lg border px-4 py-2.5 text-left transition-all ${optionStyle}`}
                     >
                       <span
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
                           isSubmitted && isCorrectOption
                             ? "bg-green-100 text-green-700"
                             : isSubmitted && isSelected
@@ -277,7 +292,7 @@ export default function QuizView({
                         {letter}
                       </span>
                       <span className="text-sm text-gray-800">
-                        {option.slice(3)}
+                        {letterMatch ? option.slice(letterMatch[0].length) : option}
                       </span>
                     </button>
                   );
@@ -291,14 +306,14 @@ export default function QuizView({
                 {!mcqAnswer?.submitted && mcqAnswer?.selected && (
                   <button
                     onClick={() => handleMCQSubmit(question.id)}
-                    className="rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
                   >
                     Check Answer
                   </button>
                 )}
                 {mcqAnswer?.submitted && question.explanation && (
-                  <div className="mt-4 rounded-xl bg-blue-50 border border-blue-100 p-5">
-                    <p className="text-xs font-semibold uppercase text-blue-600 mb-2">
+                  <div className="mt-3 rounded-lg bg-blue-50 border border-blue-100 p-4">
+                    <p className="text-[9px] font-semibold uppercase text-blue-600 mb-1">
                       Explanation
                     </p>
                     <p className="text-sm text-blue-800 leading-relaxed">
@@ -315,13 +330,13 @@ export default function QuizView({
                 {!isRevealed ? (
                   <button
                     onClick={() => handleReveal(question.id)}
-                    className="rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
                   >
                     Reveal Answer
                   </button>
                 ) : (
-                  <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-5 animate-in fade-in duration-300">
-                    <p className="text-xs font-semibold uppercase text-emerald-600 mb-2">
+                  <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-4 animate-in fade-in duration-300">
+                    <p className="text-[9px] font-semibold uppercase text-emerald-600 mb-1">
                       Model Answer
                     </p>
                     <div
@@ -339,27 +354,27 @@ export default function QuizView({
       </div>
 
       {/* Navigation */}
-      <div className="shrink-0 flex items-center justify-between mt-3 pt-2">
+      <div className="shrink-0 flex items-center justify-between mt-2 pt-1">
         <button
           onClick={goPrev}
           disabled={isFirst}
-          className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          Previous
+          Prev
         </button>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           {questions.map((_, idx) => (
             <button
               key={idx}
               onClick={() => onQuestionChange(idx)}
               className={`rounded-full transition-all duration-200 ${
                 idx === currentQuestion
-                  ? "h-2.5 w-2.5 bg-amber-500"
-                  : "h-1.5 w-1.5 bg-gray-300 hover:bg-gray-400"
+                  ? "h-2 w-2 bg-amber-500"
+                  : "h-1 w-1 bg-gray-300 hover:bg-gray-400"
               }`}
             />
           ))}
@@ -367,14 +382,14 @@ export default function QuizView({
 
         <button
           onClick={goNext}
-          className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium transition-colors ${
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
             isLast
               ? "bg-amber-500 text-white hover:bg-amber-600 shadow-sm"
-              : "text-gray-600 hover:bg-gray-100"
+              : "text-gray-500 hover:bg-gray-100"
           }`}
         >
-          {isLast ? "View Results" : "Next"}
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          {isLast ? "Results" : "Next"}
+          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </button>
