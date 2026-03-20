@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { api } from "@/lib/api-client";
 
@@ -10,6 +11,7 @@ interface User {
   fullName: string;
   email: string;
   isAdmin: boolean;
+  educationLevel: string | null;
 }
 
 export default function MainLayout({
@@ -28,7 +30,13 @@ export default function MainLayout({
   useEffect(() => {
     api
       .get<User>("/api/auth/me")
-      .then(setUser)
+      .then((u) => {
+        if (!u.educationLevel) {
+          router.push("/onboarding");
+          return;
+        }
+        setUser(u);
+      })
       .catch(() => router.push("/login"))
       .finally(() => setLoading(false));
   }, [router]);
@@ -54,6 +62,7 @@ export default function MainLayout({
 
   const navLinks = [
     { href: "/dashboard", label: "Dashboard" },
+    { href: "/my-courses", label: "My Courses" },
     { href: "/courses", label: "Browse Courses" },
     ...(user?.isAdmin ? [{ href: "/admin", label: "Admin" }] : []),
   ];
@@ -62,7 +71,7 @@ export default function MainLayout({
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" />
           <p className="text-sm text-gray-500">Loading...</p>
         </div>
       </div>
@@ -75,11 +84,8 @@ export default function MainLayout({
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
-            <Link
-              href="/dashboard"
-              className="text-xl font-bold text-indigo-600"
-            >
-              Lectern
+            <Link href="/dashboard">
+              <Image src="/logo.png" alt="Lectern" width={120} height={32} />
             </Link>
 
             {/* Desktop nav links */}
@@ -92,7 +98,7 @@ export default function MainLayout({
                     href={link.href}
                     className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                       active
-                        ? "bg-indigo-50 text-indigo-700"
+                        ? "bg-primary-50 text-primary-700"
                         : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                     }`}
                   >
@@ -111,7 +117,7 @@ export default function MainLayout({
                     onClick={() => setMenuOpen(!menuOpen)}
                     className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
                   >
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-600">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-600">
                       {user.fullName.charAt(0).toUpperCase()}
                     </span>
                     <span className="max-w-[120px] truncate">
@@ -197,7 +203,7 @@ export default function MainLayout({
                     onClick={() => setMobileNavOpen(false)}
                     className={`block rounded-md px-3 py-2 text-sm font-medium ${
                       active
-                        ? "bg-indigo-50 text-indigo-700"
+                        ? "bg-primary-50 text-primary-700"
                         : "text-gray-600 hover:bg-gray-100"
                     }`}
                   >

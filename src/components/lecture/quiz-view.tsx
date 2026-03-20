@@ -8,6 +8,7 @@ interface QuizViewProps {
   questions: Question[];
   currentQuestion: number;
   onQuestionChange: (index: number) => void;
+  answerMode?: "hidden" | "visible";
 }
 
 interface MCQAnswer {
@@ -19,6 +20,7 @@ export default function QuizView({
   questions,
   currentQuestion,
   onQuestionChange,
+  answerMode = "hidden",
 }: QuizViewProps) {
   const [mcqAnswers, setMcqAnswers] = useState<Record<number, MCQAnswer>>({});
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
@@ -27,9 +29,19 @@ export default function QuizView({
   // Reset state when questions change (e.g., navigating to a different lecture)
   useEffect(() => {
     setMcqAnswers({});
-    setRevealed({});
     setShowSummary(false);
-  }, [questions]);
+
+    // Auto-reveal free response answers if answer_mode is "visible"
+    if (answerMode === "visible") {
+      const autoRevealed: Record<number, boolean> = {};
+      questions.forEach((q) => {
+        if (q.type !== "mcq") autoRevealed[q.id] = true;
+      });
+      setRevealed(autoRevealed);
+    } else {
+      setRevealed({});
+    }
+  }, [questions, answerMode]);
 
   const question = questions[currentQuestion];
   const isFirst = currentQuestion === 0;
@@ -137,10 +149,10 @@ export default function QuizView({
 
               {/* Score card */}
               {mcqQuestions.length > 0 && (
-                <div className="mb-4 rounded-lg bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 p-4">
+                <div className="mb-4 rounded-lg bg-gradient-to-br from-primary-50 to-purple-50 border border-primary-100 p-4">
                   <div className="flex items-center gap-4">
                     <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm">
-                      <span className="text-lg font-bold text-indigo-600">
+                      <span className="text-lg font-bold text-primary-600">
                         {percentage}%
                       </span>
                     </div>
@@ -193,7 +205,7 @@ export default function QuizView({
               <div className="mt-4 flex gap-3">
                 <button
                   onClick={handleRetry}
-                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+                  className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
                 >
                   Retry Quiz
                 </button>
@@ -262,13 +274,13 @@ export default function QuizView({
                   const isSubmitted = mcqAnswer?.submitted;
                   const isCorrectOption = letter === question.correctAnswer;
 
-                  let optionStyle = "border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50";
+                  let optionStyle = "border-gray-200 hover:border-primary-300 hover:bg-primary-50/50";
                   if (isSubmitted && isCorrectOption) {
                     optionStyle = "border-green-300 bg-green-50";
                   } else if (isSubmitted && isSelected && !isCorrectOption) {
                     optionStyle = "border-red-300 bg-red-50";
                   } else if (isSelected && !isSubmitted) {
-                    optionStyle = "border-indigo-400 bg-indigo-50 ring-1 ring-indigo-400";
+                    optionStyle = "border-primary-400 bg-primary-50 ring-1 ring-primary-400";
                   }
 
                   return (
@@ -285,7 +297,7 @@ export default function QuizView({
                             : isSubmitted && isSelected
                               ? "bg-red-100 text-red-700"
                               : isSelected
-                                ? "bg-indigo-100 text-indigo-700"
+                                ? "bg-primary-100 text-primary-700"
                                 : "bg-gray-100 text-gray-600"
                         }`}
                       >
@@ -306,7 +318,7 @@ export default function QuizView({
                 {!mcqAnswer?.submitted && mcqAnswer?.selected && (
                   <button
                     onClick={() => handleMCQSubmit(question.id)}
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+                    className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
                   >
                     Check Answer
                   </button>
@@ -330,7 +342,7 @@ export default function QuizView({
                 {!isRevealed ? (
                   <button
                     onClick={() => handleReveal(question.id)}
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+                    className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
                   >
                     Reveal Answer
                   </button>

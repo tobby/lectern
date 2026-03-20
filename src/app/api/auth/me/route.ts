@@ -15,6 +15,10 @@ export async function GET() {
         isAdmin: true,
         emailVerifiedAt: true,
         createdAt: true,
+        educationLevel: true,
+        fieldOfStudy: true,
+        learningGoal: true,
+        googleId: true,
       },
     });
 
@@ -23,6 +27,7 @@ export async function GET() {
     return json({
       ...user,
       emailVerified: !!user.emailVerifiedAt,
+      hasGoogleLinked: !!user.googleId,
     });
   } catch {
     return error("Unauthorized", 401);

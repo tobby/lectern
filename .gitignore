@@ -19,6 +19,7 @@
 
 # production
 /build
+/migrate.js
 
 # misc
 .DS_Store

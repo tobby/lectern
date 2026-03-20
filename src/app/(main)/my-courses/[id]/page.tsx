@@ -1,0 +1,539 @@
+"use client";
+
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { api } from "@/lib/api-client";
+import { Modal } from "@/components/modal";
+
+interface Upload {
+  id: string;
+  fileName: string;
+  fileType: string;
+  fileSizeBytes: number;
+  createdAt: string;
+}
+
+interface Lecture {
+  id: string;
+  title: string;
+  description: string | null;
+  orderIndex: number;
+  aiStatus: "pending" | "processing" | "done" | "failed";
+}
+
+interface GenerationJob {
+  id: string;
+  status: "pending" | "processing" | "done" | "failed";
+  error: string | null;
+  lecturesCreated: number | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+interface Course {
+  id: string;
+  title: string;
+  description: string | null;
+  createdAt: string;
+}
+
+const AI_STATUS_STYLES: Record<string, string> = {
+  pending: "bg-gray-100 text-gray-600",
+  processing: "bg-blue-100 text-blue-700",
+  done: "bg-green-100 text-green-700",
+  failed: "bg-red-100 text-red-700",
+};
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export default function CourseManagementPage() {
+  const params = useParams();
+  const router = useRouter();
+  const courseId = params.id as string;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [course, setCourse] = useState<Course | null>(null);
+  const [uploads, setUploads] = useState<Upload[]>([]);
+  const [lectures, setLectures] = useState<Lecture[]>([]);
+  const [generationJob, setGenerationJob] = useState<GenerationJob | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Course edit state
+  const [editingCourse, setEditingCourse] = useState(false);
+  const [courseForm, setCourseForm] = useState({ title: "", description: "" });
+  const [courseSaving, setCourseSaving] = useState(false);
+
+  // Upload state
+  const [uploading, setUploading] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState<string[]>([]);
+
+  // Generation state
+  const [generating, setGenerating] = useState(false);
+  const [showRegenerateModal, setShowRegenerateModal] = useState(false);
+  const [alertModal, setAlertModal] = useState<string | null>(null);
+  const [deleteLectureModal, setDeleteLectureModal] = useState<{ id: string; title: string } | null>(null);
+
+  // Lecture edit state
+  const [editingLectureId, setEditingLectureId] = useState<string | null>(null);
+  const [editLectureTitle, setEditLectureTitle] = useState("");
+  const [savingLecture, setSavingLecture] = useState(false);
+
+  const fetchCourse = useCallback(async () => {
+    try {
+      const data = await api.get<Course>(`/api/courses/${courseId}`);
+      setCourse(data);
+      setCourseForm({ title: data.title, description: data.description || "" });
+    } catch {
+      router.push("/my-courses");
+    }
+  }, [courseId, router]);
+
+  const fetchUploads = useCallback(async () => {
+    const data = await api.get<Upload[]>(`/api/courses/${courseId}/uploads`);
+    setUploads(data);
+  }, [courseId]);
+
+  const fetchLectures = useCallback(async () => {
+    const data = await api.get<Lecture[]>(`/api/courses/${courseId}/lectures`);
+    setLectures(data);
+  }, [courseId]);
+
+  const fetchGenerationStatus = useCallback(async () => {
+    const data = await api.get<GenerationJob | null>(
+      `/api/courses/${courseId}/generate`
+    );
+    setGenerationJob(data);
+    return data;
+  }, [courseId]);
+
+  const startPolling = useCallback(() => {
+    if (pollIntervalRef.current) return;
+    pollIntervalRef.current = setInterval(async () => {
+      const job = await fetchGenerationStatus();
+      if (job && (job.status === "done" || job.status === "failed")) {
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+        if (job.status === "done") {
+          await fetchLectures();
+        }
+      }
+    }, 5000);
+  }, [fetchGenerationStatus, fetchLectures]);
+
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    Promise.all([fetchCourse(), fetchUploads(), fetchLectures(), fetchGenerationStatus()])
+      .then(() => {
+        fetchGenerationStatus().then((job) => {
+          if (job && job.status === "processing") startPolling();
+        });
+      })
+      .catch(() => router.push("/login"))
+      .finally(() => setLoading(false));
+  }, [router, fetchCourse, fetchUploads, fetchLectures, fetchGenerationStatus, startPolling]);
+
+  async function handleSaveCourse(e: React.FormEvent) {
+    e.preventDefault();
+    if (!courseForm.title.trim()) return;
+    setCourseSaving(true);
+    try {
+      await api.patch(`/api/courses/${courseId}`, {
+        title: courseForm.title.trim(),
+        description: courseForm.description.trim() || null,
+      });
+      await fetchCourse();
+      setEditingCourse(false);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to update course";
+      setAlertModal(message);
+    } finally {
+      setCourseSaving(false);
+    }
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploading(true);
+    setUploadingFiles(Array.from(files).map((f) => f.name));
+
+    try {
+      const formData = new FormData();
+      for (const file of Array.from(files)) {
+        formData.append("files", file);
+      }
+      const created = await api.upload<Upload[]>(
+        `/api/courses/${courseId}/uploads`,
+        formData
+      );
+      setUploads((prev) => [...prev, ...created]);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to upload files";
+      setAlertModal(message);
+    } finally {
+      setUploading(false);
+      setUploadingFiles([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleDeleteUpload(uploadId: string) {
+    try {
+      await api.delete(`/api/courses/${courseId}/uploads/${uploadId}`);
+      setUploads((prev) => prev.filter((u) => u.id !== uploadId));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to delete upload";
+      setAlertModal(message);
+    }
+  }
+
+  function handleGenerateClick() {
+    if (lectures.length > 0) {
+      setShowRegenerateModal(true);
+      return;
+    }
+    doGenerate();
+  }
+
+  async function doGenerate() {
+    setGenerating(true);
+    try {
+      const job = await api.post<GenerationJob>(
+        `/api/courses/${courseId}/generate`,
+        {}
+      );
+      setGenerationJob(job);
+      startPolling();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to start generation";
+      setAlertModal(message);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleSaveLecture(lectureId: string) {
+    if (!editLectureTitle.trim()) return;
+    setSavingLecture(true);
+    try {
+      await api.patch(`/api/lectures/${lectureId}`, {
+        title: editLectureTitle.trim(),
+      });
+      setEditingLectureId(null);
+      await fetchLectures();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to update lecture";
+      setAlertModal(message);
+    } finally {
+      setSavingLecture(false);
+    }
+  }
+
+  async function handleDeleteLecture(lectureId: string) {
+    try {
+      await api.delete(`/api/lectures/${lectureId}`);
+      setLectures((prev) => prev.filter((l) => l.id !== lectureId));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to delete lecture";
+      setAlertModal(message);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!course) return null;
+
+  const isProcessing = generationJob?.status === "processing";
+
+  return (
+    <div className="mx-auto max-w-4xl">
+      <div className="mb-6">
+        <Link
+          href="/my-courses"
+          className="text-sm text-gray-500 hover:text-gray-700"
+        >
+          &larr; Back to My Courses
+        </Link>
+      </div>
+
+      {/* Course Info */}
+      <div className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        {editingCourse ? (
+          <form onSubmit={handleSaveCourse} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Title</label>
+              <input
+                type="text"
+                required
+                value={courseForm.title}
+                onChange={(e) => setCourseForm({ ...courseForm, title: e.target.value })}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Description</label>
+              <textarea
+                rows={3}
+                value={courseForm.description}
+                onChange={(e) => setCourseForm({ ...courseForm, description: e.target.value })}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={courseSaving}
+                className="rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+              >
+                {courseSaving ? "Saving..." : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingCourse(false)}
+                className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{course.title}</h1>
+              {course.description && (
+                <p className="mt-1 text-sm text-gray-500">{course.description}</p>
+              )}
+            </div>
+            <button
+              onClick={() => setEditingCourse(true)}
+              className="rounded-md bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 transition-colors"
+            >
+              Edit
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Source Materials */}
+      <div className="mb-8">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Source Materials ({uploads.length})
+          </h2>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50 transition-colors"
+          >
+            {uploading ? "Uploading..." : "Upload Files"}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.docx,.pptx,.txt"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+        </div>
+
+        <div
+          onClick={() => !uploading && fileInputRef.current?.click()}
+          className="mb-4 cursor-pointer rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center transition-colors hover:border-primary-400 hover:bg-primary-50/30"
+        >
+          {uploading ? (
+            <div>
+              <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" />
+              <p className="text-sm text-gray-600">
+                Uploading {uploadingFiles.join(", ")}...
+              </p>
+            </div>
+          ) : (
+            <>
+              <svg className="mx-auto mb-3 h-10 w-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+              </svg>
+              <p className="text-sm font-medium text-gray-700">Click to upload or drag and drop</p>
+              <p className="mt-1 text-xs text-gray-500">PDF, DOCX, PPTX, TXT (max 50MB each)</p>
+            </>
+          )}
+        </div>
+
+        {uploads.length > 0 && (
+          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+            {uploads.map((upload, idx) => (
+              <div
+                key={upload.id}
+                className={`flex items-center justify-between px-4 py-3 ${idx > 0 ? "border-t border-gray-100" : ""}`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-gray-600">
+                    {upload.fileType}
+                  </span>
+                  <span className="text-sm text-gray-900">{upload.fileName}</span>
+                  <span className="text-xs text-gray-400">{formatFileSize(upload.fileSizeBytes)}</span>
+                </div>
+                <button
+                  onClick={() => handleDeleteUpload(upload.id)}
+                  className="rounded-md p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {uploads.length > 0 && (
+          <div className="mt-4 flex items-center gap-4">
+            <button
+              onClick={handleGenerateClick}
+              disabled={isProcessing || generating}
+              className="rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50 transition-colors"
+            >
+              {isProcessing ? "Generating..." : generating ? "Starting..." : "Generate Lectures"}
+            </button>
+
+            {generationJob && (
+              <div className="flex items-center gap-2">
+                {isProcessing && (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-600 border-t-transparent" />
+                )}
+                <span className={`text-sm ${generationJob.status === "done" ? "text-green-600" : generationJob.status === "failed" ? "text-red-600" : "text-gray-600"}`}>
+                  {generationJob.status === "done" && `${generationJob.lecturesCreated} lecture${generationJob.lecturesCreated !== 1 ? "s" : ""} generated`}
+                  {generationJob.status === "failed" && `Generation failed: ${generationJob.error || "Unknown error"}`}
+                  {generationJob.status === "processing" && (generationJob.error || "Starting generation...")}
+                  {generationJob.status === "pending" && "Queued..."}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Lectures */}
+      <div className="mb-6 flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-gray-900">Lectures ({lectures.length})</h2>
+      </div>
+
+      {lectures.length === 0 ? (
+        <div className="rounded-lg border border-gray-200 bg-white py-8 text-center">
+          <p className="text-sm text-gray-500">
+            No lectures yet. Upload source materials and click &quot;Generate Lectures&quot; to get started.
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+          {lectures.map((lecture, idx) => (
+            <div
+              key={lecture.id}
+              className={`flex items-center justify-between px-4 py-3 ${idx > 0 ? "border-t border-gray-100" : ""}`}
+            >
+              {editingLectureId === lecture.id ? (
+                <div className="flex flex-1 items-center gap-2">
+                  <input
+                    type="text"
+                    value={editLectureTitle}
+                    onChange={(e) => setEditLectureTitle(e.target.value)}
+                    className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); handleSaveLecture(lecture.id); }
+                      if (e.key === "Escape") setEditingLectureId(null);
+                    }}
+                  />
+                  <button onClick={() => handleSaveLecture(lecture.id)} disabled={savingLecture} className="rounded-md bg-primary-600 px-2 py-1 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50">
+                    {savingLecture ? "..." : "Save"}
+                  </button>
+                  <button onClick={() => setEditingLectureId(null)} className="rounded-md px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100">
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-100 text-xs font-medium text-primary-700">
+                      {idx + 1}
+                    </span>
+                    <span className="text-sm font-medium text-gray-900">{lecture.title}</span>
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${AI_STATUS_STYLES[lecture.aiStatus]}`}>
+                      {lecture.aiStatus}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Link
+                      href={`/my-courses/${courseId}/lectures/${lecture.id}`}
+                      className="rounded-md px-2 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50"
+                    >
+                      Manage
+                    </Link>
+                    <button
+                      onClick={() => { setEditingLectureId(lecture.id); setEditLectureTitle(lecture.title); }}
+                      className="rounded-md px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => setDeleteLectureModal({ id: lecture.id, title: lecture.title })}
+                      className="rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Modal
+        open={showRegenerateModal}
+        onClose={() => setShowRegenerateModal(false)}
+        onConfirm={doGenerate}
+        title="Regenerate Lectures"
+        message="This will regenerate all lectures from all uploaded materials. Manual edits to study aids will be preserved for matching topics. Continue?"
+        confirmText="Regenerate"
+        variant="destructive"
+      />
+
+      <Modal
+        open={!!deleteLectureModal}
+        onClose={() => setDeleteLectureModal(null)}
+        onConfirm={() => deleteLectureModal && handleDeleteLecture(deleteLectureModal.id)}
+        title="Delete Lecture"
+        message={`Delete lecture "${deleteLectureModal?.title}"?`}
+        confirmText="Delete"
+        variant="destructive"
+      />
+
+      <Modal
+        open={!!alertModal}
+        onClose={() => setAlertModal(null)}
+        title="Error"
+        message={alertModal || ""}
+      />
+    </div>
+  );
+}

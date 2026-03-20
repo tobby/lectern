@@ -154,7 +154,7 @@ export default function BrowseCoursesPage() {
             return (
               <div
                 key={course.id}
-                className="flex flex-col rounded-lg border border-gray-200 bg-white p-6 shadow-sm transition-all hover:shadow-md hover:border-indigo-200"
+                className="flex flex-col rounded-lg border border-gray-200 bg-white p-6 shadow-sm transition-all hover:shadow-md hover:border-primary-200"
               >
                 <h3 className="text-lg font-semibold text-gray-900">
                   {course.title}
@@ -176,7 +176,7 @@ export default function BrowseCoursesPage() {
                   {isEnrolled ? (
                     <Link
                       href={`/courses/${course.id}`}
-                      className="inline-flex items-center rounded-md bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+                      className="inline-flex items-center rounded-md bg-primary-50 px-4 py-2 text-sm font-medium text-primary-700 hover:bg-primary-100 transition-colors"
                     >
                       View Course
                       <svg
@@ -197,7 +197,7 @@ export default function BrowseCoursesPage() {
                     <button
                       onClick={() => handleEnroll(course.id)}
                       disabled={isEnrolling}
-                      className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       {isEnrolling ? (
                         <>

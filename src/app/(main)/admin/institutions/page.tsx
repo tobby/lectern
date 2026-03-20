@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
+import { Modal } from "@/components/modal";
 
 interface User {
   id: string;
@@ -40,6 +41,8 @@ export default function InstitutionsPage() {
 
   // Delete state
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{ id: string; name: string } | null>(null);
+  const [alertModal, setAlertModal] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -108,19 +111,13 @@ export default function InstitutionsPage() {
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to update institution";
-      alert(message);
+      setAlertModal(message);
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleDelete(id: string, name: string) {
-    if (
-      !window.confirm(
-        `Delete institution "${name}"? Courses linked to this institution will have their institution removed.`
-      )
-    )
-      return;
+  async function handleDelete(id: string) {
     setDeletingId(id);
     try {
       await api.delete(`/api/institutions/${id}`);
@@ -128,7 +125,7 @@ export default function InstitutionsPage() {
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to delete institution";
-      alert(message);
+      setAlertModal(message);
     } finally {
       setDeletingId(null);
     }
@@ -137,7 +134,7 @@ export default function InstitutionsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" />
       </div>
     );
   }
@@ -163,7 +160,7 @@ export default function InstitutionsPage() {
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+          className="rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
         >
           Add Institution
         </button>
@@ -173,7 +170,7 @@ export default function InstitutionsPage() {
       {showCreate && (
         <form
           onSubmit={handleCreate}
-          className="mb-6 rounded-lg border border-indigo-200 bg-indigo-50 p-4"
+          className="mb-6 rounded-lg border border-primary-200 bg-primary-50 p-4"
         >
           <h3 className="mb-3 text-sm font-medium text-gray-900">
             New Institution
@@ -190,7 +187,7 @@ export default function InstitutionsPage() {
               placeholder="Institution name *"
               value={createName}
               onChange={(e) => setCreateName(e.target.value)}
-              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
             />
             <div className="grid grid-cols-2 gap-3">
               <input
@@ -198,21 +195,21 @@ export default function InstitutionsPage() {
                 placeholder="Country"
                 value={createCountry}
                 onChange={(e) => setCreateCountry(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
               />
               <input
                 type="url"
                 placeholder="Website URL"
                 value={createWebsite}
                 onChange={(e) => setCreateWebsite(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
               />
             </div>
             <div className="flex gap-2">
               <button
                 type="submit"
                 disabled={creating}
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
               >
                 {creating ? "Creating..." : "Create"}
               </button>
@@ -265,7 +262,7 @@ export default function InstitutionsPage() {
                           type="text"
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
-                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
                               e.preventDefault();
@@ -280,7 +277,7 @@ export default function InstitutionsPage() {
                           type="text"
                           value={editCountry}
                           onChange={(e) => setEditCountry(e.target.value)}
-                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
                         />
                       </td>
                       <td className="hidden px-6 py-3 md:table-cell">
@@ -288,7 +285,7 @@ export default function InstitutionsPage() {
                           type="url"
                           value={editWebsite}
                           onChange={(e) => setEditWebsite(e.target.value)}
-                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
                         />
                       </td>
                       <td className="px-6 py-3 text-right">
@@ -296,7 +293,7 @@ export default function InstitutionsPage() {
                           <button
                             onClick={() => handleSave(inst.id)}
                             disabled={saving}
-                            className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                            className="rounded-md bg-primary-600 px-2 py-1 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
                           >
                             {saving ? "..." : "Save"}
                           </button>
@@ -323,7 +320,7 @@ export default function InstitutionsPage() {
                             href={inst.website}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-indigo-600 hover:text-indigo-700"
+                            className="text-primary-600 hover:text-primary-700"
                           >
                             {inst.website.replace(/^https?:\/\//, "")}
                           </a>
@@ -335,12 +332,12 @@ export default function InstitutionsPage() {
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => startEdit(inst)}
-                            className="rounded-md px-3 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 transition-colors"
+                            className="rounded-md px-3 py-1.5 text-sm font-medium text-primary-600 hover:bg-primary-50 transition-colors"
                           >
                             Edit
                           </button>
                           <button
-                            onClick={() => handleDelete(inst.id, inst.name)}
+                            onClick={() => setDeleteModal({ id: inst.id, name: inst.name })}
                             disabled={deletingId === inst.id}
                             className="rounded-md px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
                           >
@@ -356,6 +353,23 @@ export default function InstitutionsPage() {
           </table>
         </div>
       )}
+
+      <Modal
+        open={!!deleteModal}
+        onClose={() => setDeleteModal(null)}
+        onConfirm={() => deleteModal && handleDelete(deleteModal.id)}
+        title="Delete Institution"
+        message={`Delete institution "${deleteModal?.name}"? Courses linked to this institution will have their institution removed.`}
+        confirmText="Delete"
+        variant="destructive"
+      />
+
+      <Modal
+        open={!!alertModal}
+        onClose={() => setAlertModal(null)}
+        title="Error"
+        message={alertModal || ""}
+      />
     </div>
   );
 }

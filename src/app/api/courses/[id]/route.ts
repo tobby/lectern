@@ -10,7 +10,7 @@ import {
   chatSessions,
 } from "@/lib/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { json, error, withAuth, withAdmin } from "@/lib/api-utils";
+import { json, error, withAuth, withOwner } from "@/lib/api-utils";
 import { deleteFromR2 } from "@/lib/r2/client";
 
 // Get course detail (any authenticated user)
@@ -37,17 +37,10 @@ export const GET = withAuth(async (_req, { params }) => {
   return json(course);
 });
 
-// Update course (admin who created it)
-export const PATCH = withAdmin(async (req, { user, params }) => {
+// Update course (owner or admin)
+export const PATCH = withOwner(async (req, { user, params, course }) => {
   const id = params!.id;
   const body = await req.json();
-
-  const course = await db.query.courses.findFirst({
-    where: (c, { eq: e }) => e(c.id, id),
-  });
-
-  if (!course) return error("Course not found", 404);
-  if (course.createdBy !== user.sub) return error("Forbidden", 403);
 
   const [updated] = await db
     .update(courses)
@@ -72,16 +65,9 @@ export const PATCH = withAdmin(async (req, { user, params }) => {
   return json(updated);
 });
 
-// Delete course with full cascade
-export const DELETE = withAdmin(async (_req, { user, params }) => {
+// Delete course with full cascade (owner or admin)
+export const DELETE = withOwner(async (_req, { user, params, course }) => {
   const id = params!.id;
-
-  const course = await db.query.courses.findFirst({
-    where: (c, { eq: e }) => e(c.id, id),
-  });
-
-  if (!course) return error("Course not found", 404);
-  if (course.createdBy !== user.sub) return error("Forbidden", 403);
 
   // Get all materials for R2 cleanup
   const courseModules = await db.query.modules.findMany({

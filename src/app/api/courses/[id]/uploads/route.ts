@@ -1,24 +1,17 @@
 import { db } from "@/lib/db/drizzle";
 import { courseUploads } from "@/lib/db/schema";
-import { eq, asc } from "drizzle-orm";
-import { json, error, withAdmin, userRateLimit } from "@/lib/api-utils";
+import { asc } from "drizzle-orm";
+import { json, error, withOwner, userRateLimit } from "@/lib/api-utils";
 import { uploadToR2 } from "@/lib/r2/client";
 
 const ALLOWED_TYPES = ["pdf", "docx", "pptx", "txt"];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
-export const POST = withAdmin(async (req, { user, params }) => {
+export const POST = withOwner(async (req, { user, params, course }) => {
   const courseId = params!.id;
 
   const rateLimited = userRateLimit("upload", 20, 60 * 60 * 1000, user.sub);
   if (rateLimited) return rateLimited;
-
-  // Verify course exists and user owns it
-  const course = await db.query.courses.findFirst({
-    where: (c, { eq: e }) => e(c.id, courseId),
-  });
-  if (!course) return error("Course not found", 404);
-  if (course.createdBy !== user.sub) return error("Forbidden", 403);
 
   const formData = await req.formData();
   const files = formData.getAll("files") as File[];
@@ -62,13 +55,8 @@ export const POST = withAdmin(async (req, { user, params }) => {
   return json(created, 201);
 });
 
-export const GET = withAdmin(async (req, { user, params }) => {
+export const GET = withOwner(async (req, { user, params, course }) => {
   const courseId = params!.id;
-
-  const course = await db.query.courses.findFirst({
-    where: (c, { eq: e }) => e(c.id, courseId),
-  });
-  if (!course) return error("Course not found", 404);
 
   const uploads = await db.query.courseUploads.findMany({
     where: (u, { eq: e }) => e(u.courseId, courseId),

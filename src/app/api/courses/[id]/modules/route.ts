@@ -1,18 +1,11 @@
 import { db } from "@/lib/db/drizzle";
-import { modules, courses } from "@/lib/db/schema";
+import { modules } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { json, error, withAdmin } from "@/lib/api-utils";
+import { json, error, withOwner } from "@/lib/api-utils";
 
-export const POST = withAdmin(async (req, { user, params }) => {
+export const POST = withOwner(async (req, { user, params, course }) => {
   const courseId = params!.id;
   const body = await req.json();
-
-  const course = await db.query.courses.findFirst({
-    where: (c, { eq: e }) => e(c.id, courseId),
-  });
-
-  if (!course) return error("Course not found", 404);
-  if (course.createdBy !== user.sub) return error("Forbidden", 403);
 
   if (!body.title || typeof body.title !== "string") {
     return error("Module title is required");

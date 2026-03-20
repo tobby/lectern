@@ -1,10 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/lib/db/drizzle";
 import {
+  courses,
   courseUploads,
   generationJobs,
   lectures,
   studyAids,
+  users,
 } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getObjectBuffer } from "@/lib/r2/client";
@@ -42,7 +44,7 @@ Return ONLY valid JSON (no markdown wrapping):
 
 Be exhaustive in your topic extraction. Identify EVERY distinct concept, framework, model, and skill covered in the materials.`;
 
-const CURRICULUM_PROMPT = `You are designing a university course curriculum for MBA students. You have already analyzed the source materials and produced a comprehension analysis.
+const CURRICULUM_PROMPT = `You are designing a university course curriculum for university students. You have already analyzed the source materials and produced a comprehension analysis.
 
 Your job is to organize the topics into 3-6 lectures that build understanding PROGRESSIVELY. Each lecture must tell a coherent story — not just group related topics.
 
@@ -67,7 +69,7 @@ Guidelines:
 - Consolidate overlapping content from different sources.
 - The opening hook should make a student think "I need to understand this."`;
 
-const CONTENT_PROMPT = `You are the world's best professor writing lecture notes for MBA students. Your students are smart but have ZERO prior knowledge of this specific topic. They should be able to study ONLY your notes and pass the university exam with flying colors.
+const CONTENT_PROMPT = `You are the world's best professor writing lecture notes for university students. Your students are smart but have ZERO prior knowledge of this specific topic. They should be able to study ONLY your notes and pass the university exam with flying colors.
 
 Your goal is GENUINE UNDERSTANDING — not information transfer. A student reading your notes should feel like they're sitting in a brilliant lecture, not reading a textbook.
 
@@ -91,7 +93,7 @@ FORMATTING RULES:
 - Use markdown tables for comparisons (| Header | Header |)
 - Each concept must have substantial content — multiple paragraphs with sub-sections, NOT a single paragraph`;
 
-const AREAS_PROMPT = `You are an expert exam coach preparing MBA students for their university exams. You have the full lesson notes for this lecture.
+const AREAS_PROMPT = `You are an expert exam coach preparing university students for their university exams. You have the full lesson notes for this lecture.
 
 Your job is to tell students exactly what to focus on, what examiners look for, and how to structure strong answers. Be SPECIFIC and ACTIONABLE — generic advice like "understand the key concepts" is worthless.
 
@@ -117,7 +119,7 @@ Step-by-step structure for answering exam questions on this topic.
 ### Key Terms and Frameworks
 Specific terms, models, and frameworks that MUST appear in a strong answer.`;
 
-const QUESTIONS_PROMPT = `You are a tough but fair university professor creating practice exam questions for MBA students. You have the full lesson notes and exam focus areas.
+const QUESTIONS_PROMPT = `You are a tough but fair university professor creating practice exam questions for university students. You have the full lesson notes and exam focus areas.
 
 Every question must test UNDERSTANDING and APPLICATION — not recall. If a student could answer the question by memorizing a definition without understanding it, the question is too easy.
 
@@ -143,7 +145,7 @@ Generate exactly 5 questions requiring concept APPLICATION (not just definition)
 **Answer:** [Detailed model answer, 3-5 sentences with specific examples]
 
 ### Case Analysis Questions
-Generate exactly 2 realistic MBA case scenarios. Each case should be 3-4 paragraphs describing a real-world business situation, followed by analytical questions.
+Generate exactly 2 realistic case scenarios. Each case should be 3-4 paragraphs describing a real-world business situation, followed by analytical questions.
 
 **Q1.** [Detailed case scenario with specific numbers, company details, and market context]
 **Answer:** [Comprehensive analysis applying multiple concepts from the lecture, 4-6 paragraphs]
@@ -154,7 +156,7 @@ Generate exactly 2 essay questions that mirror actual university exam questions.
 **Q1.** [Thought-provoking essay question that requires synthesizing multiple concepts]
 **Answer:** [Structured model essay with introduction, key arguments with evidence, and conclusion — 5-8 paragraphs]`;
 
-const REVIEW_PROMPT = `You are a demanding MBA student who has paid a lot of money for this course. You are reviewing the study materials for a single lecture. Be critical but constructive.
+const REVIEW_PROMPT = `You are a demanding university student who has paid a lot of money for this course. You are reviewing the study materials for a single lecture. Be critical but constructive.
 
 For each concept section in the lesson notes, evaluate:
 1. **Clarity (1-5):** Could a beginner with zero background actually understand this? Or does it assume prior knowledge?
@@ -281,17 +283,22 @@ function findRelevantChunks(
   return combined || scored[0].chunk;
 }
 
+interface ClaudeResult {
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 async function callClaude(opts: {
   system: string;
   userMessage: string;
   maxTokens: number;
   thinking?: boolean;
   thinkingBudget?: number;
-}): Promise<string> {
+}): Promise<ClaudeResult> {
   const { system, userMessage, maxTokens, thinking, thinkingBudget } = opts;
 
   if (thinking) {
-    // Extended thinking — must use streaming (non-streaming times out after 10min)
     const stream = anthropic.messages.stream({
       model: MODEL,
       max_tokens: maxTokens + (thinkingBudget || 10000),
@@ -301,20 +308,19 @@ async function callClaude(opts: {
     });
 
     const response = await stream.finalMessage();
+    const usage = response.usage;
 
-    // Extract the text block (skip thinking blocks)
     for (const block of response.content) {
       if (block.type === "text") {
         let text = block.text.trim();
         const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
         if (match) text = match[1].trim();
-        return text;
+        return { text, inputTokens: usage?.input_tokens || 0, outputTokens: usage?.output_tokens || 0 };
       }
     }
     throw new Error("No text block in thinking response");
   }
 
-  // Standard call — use streaming for non-thinking requests
   const stream = anthropic.messages.stream({
     model: MODEL,
     max_tokens: maxTokens,
@@ -323,6 +329,7 @@ async function callClaude(opts: {
   });
 
   const response = await stream.finalMessage();
+  const usage = response.usage;
   const content = response.content[0];
   if (content.type !== "text") throw new Error("Unexpected response type");
 
@@ -330,7 +337,7 @@ async function callClaude(opts: {
   const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (match) text = match[1].trim();
 
-  return text;
+  return { text, inputTokens: usage?.input_tokens || 0, outputTokens: usage?.output_tokens || 0 };
 }
 
 function parseContentResponse(raw: string): string {
@@ -389,6 +396,48 @@ export async function generateCourseLectures(
         .where(eq(generationJobs.id, jobId));
     }
 
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
+    async function trackedCallClaude(opts: Parameters<typeof callClaude>[0]): Promise<string> {
+      const result = await callClaude(opts);
+      totalInputTokens += result.inputTokens;
+      totalOutputTokens += result.outputTokens;
+      return result.text;
+    }
+
+    // ── Load student profile for tailored generation ──
+    const course = await db.query.courses.findFirst({
+      where: (c, { eq: e }) => e(c.id, courseId),
+    });
+    let studentContext = "";
+    if (course?.createdBy) {
+      const creator = await db.query.users.findFirst({
+        where: (u, { eq: e }) => e(u.id, course.createdBy),
+        columns: { educationLevel: true, fieldOfStudy: true, learningGoal: true },
+      });
+      if (creator?.educationLevel) {
+        const levelLabel: Record<string, string> = {
+          high_school: "high school",
+          undergraduate: "undergraduate",
+          postgraduate: "postgraduate",
+          professional: "professional",
+        };
+        const goalLabel: Record<string, string> = {
+          exam_prep: "exam preparation",
+          deep_understanding: "deep conceptual understanding",
+          quick_review: "quick review of key concepts",
+        };
+        const parts = [`The student is at the ${levelLabel[creator.educationLevel] || creator.educationLevel} level`];
+        if (creator.fieldOfStudy) parts.push(`studying ${creator.fieldOfStudy}`);
+        if (creator.learningGoal) parts.push(`with a focus on ${goalLabel[creator.learningGoal] || creator.learningGoal}`);
+        studentContext = parts.join(", ") + ". Tailor the depth, examples, and language to this level.";
+      }
+    }
+
+    // Append student context to generation prompts
+    const ctxSuffix = studentContext ? `\n\nSTUDENT PROFILE: ${studentContext}` : "";
+
     // ── Step 1: Extract text from uploads (with caching) ──
     await updateProgress("Extracting text from uploaded files...");
 
@@ -434,8 +483,8 @@ export async function generateCourseLectures(
 
     if (chunks.length === 1) {
       // All content fits — analyze in one pass with extended thinking
-      const analysisJson = await callClaude({
-        system: COMPREHENSION_PROMPT,
+      const analysisJson = await trackedCallClaude({
+        system: COMPREHENSION_PROMPT + ctxSuffix,
         userMessage: `Analyze this course material thoroughly:\n\n${combinedText}`,
         maxTokens: 8192,
         thinking: true,
@@ -466,8 +515,8 @@ export async function generateCourseLectures(
 
         const results = await Promise.allSettled(
           batch.map((chunk) =>
-            callClaude({
-              system: COMPREHENSION_PROMPT,
+            trackedCallClaude({
+              system: COMPREHENSION_PROMPT + ctxSuffix,
               userMessage: `Analyze this course material thoroughly:\n\n${chunk}`,
               maxTokens: 8192,
               thinking: true,
@@ -523,8 +572,8 @@ export async function generateCourseLectures(
 
     const comprehensionSummary = JSON.stringify(comprehension, null, 2);
 
-    const curriculumJson = await callClaude({
-      system: CURRICULUM_PROMPT,
+    const curriculumJson = await trackedCallClaude({
+      system: CURRICULUM_PROMPT + ctxSuffix,
       userMessage: `Here is the deep analysis of the course materials:\n\n${comprehensionSummary}\n\nDesign the optimal lecture sequence.`,
       maxTokens: 4096,
       thinking: true,
@@ -536,8 +585,8 @@ export async function generateCourseLectures(
       outline = JSON.parse(curriculumJson);
     } catch {
       console.warn("Curriculum JSON parse failed, retrying...");
-      const retryJson = await callClaude({
-        system: CURRICULUM_PROMPT,
+      const retryJson = await trackedCallClaude({
+        system: CURRICULUM_PROMPT + ctxSuffix,
         userMessage: `IMPORTANT: Return ONLY valid JSON.\n\nHere is the analysis:\n\n${comprehensionSummary}\n\nDesign the lecture sequence.`,
         maxTokens: 4096,
         thinking: true,
@@ -562,7 +611,17 @@ export async function generateCourseLectures(
     // ── Agent Steps 3-5: Generate each lecture ──
     const defaultModuleId = await getOrCreateDefaultModule(courseId);
 
+    // Load old lectures + study aids to preserve manual edits
+    const oldLectures = await db.query.lectures.findMany({
+      where: (l, { eq: e }) => e(l.moduleId, defaultModuleId),
+      with: { studyAid: true },
+    });
+    const oldLectureMap = new Map(
+      oldLectures.map((l) => [l.title.toLowerCase().trim(), l])
+    );
+
     let lecturesCreated = 0;
+    let manualEditsPreserved = 0;
     const createdLectureIds: { lectureId: string; outline: LectureOutline }[] = [];
     const total = outline.lectures.length;
 
@@ -602,8 +661,8 @@ Use these as the factual basis for your content. Extract, expand, and explain al
 ${relevantText}`;
 
       const keyConcepts = parseContentResponse(
-        await callClaude({
-          system: CONTENT_PROMPT,
+        await trackedCallClaude({
+          system: CONTENT_PROMPT + ctxSuffix,
           userMessage: lectureContext,
           maxTokens: 32000,
           thinking: true,
@@ -632,15 +691,15 @@ ${shortRelevantText}
 ${keyConcepts}`;
 
       const [areasOfConcentration, examQuestions] = await Promise.all([
-        callClaude({
-          system: AREAS_PROMPT,
+        trackedCallClaude({
+          system: AREAS_PROMPT + ctxSuffix,
           userMessage: followUpContext,
           maxTokens: 16000,
           thinking: true,
           thinkingBudget: 6000,
         }).then(parseContentResponse),
-        callClaude({
-          system: QUESTIONS_PROMPT,
+        trackedCallClaude({
+          system: QUESTIONS_PROMPT + ctxSuffix,
           userMessage: followUpContext,
           maxTokens: 16000,
           thinking: true,
@@ -656,8 +715,8 @@ ${keyConcepts}`;
       let finalQuestions = examQuestions;
 
       try {
-        const reviewJson = await callClaude({
-          system: REVIEW_PROMPT,
+        const reviewJson = await trackedCallClaude({
+          system: REVIEW_PROMPT + ctxSuffix,
           userMessage: `Review these study materials for the lecture "${lec.title}":\n\n--- KEY CONCEPTS ---\n${keyConcepts}\n\n--- EXAM FOCUS AREAS ---\n${areasOfConcentration}`,
           maxTokens: 4096,
           thinking: true,
@@ -689,8 +748,8 @@ ${weakFeedback || review.overallFeedback}
 Rewrite ALL concept sections, paying special attention to the weak areas identified above. Make sure every concept has concrete examples, explains the WHY, and would be understandable to a beginner.`;
 
           const improved = parseContentResponse(
-            await callClaude({
-              system: CONTENT_PROMPT,
+            await trackedCallClaude({
+              system: CONTENT_PROMPT + ctxSuffix,
               userMessage: improvementContext,
               maxTokens: 32000,
               thinking: true,
@@ -715,15 +774,15 @@ ${shortRelevantText}
 ${improved}`;
 
             const [improvedAreas, improvedQuestions] = await Promise.all([
-              callClaude({
-                system: AREAS_PROMPT,
+              trackedCallClaude({
+                system: AREAS_PROMPT + ctxSuffix,
                 userMessage: improvedFollowUp,
                 maxTokens: 16000,
                 thinking: true,
                 thinkingBudget: 4000,
               }).then(parseContentResponse),
-              callClaude({
-                system: QUESTIONS_PROMPT,
+              trackedCallClaude({
+                system: QUESTIONS_PROMPT + ctxSuffix,
                 userMessage: improvedFollowUp,
                 maxTokens: 16000,
                 thinking: true,
@@ -747,8 +806,8 @@ ${improved}`;
         console.log(`Structural issues in concepts for "${lec.title}" (${conceptSlides.length} slides), regenerating...`);
         try {
           const regenConcepts = parseContentResponse(
-            await callClaude({
-              system: CONTENT_PROMPT,
+            await trackedCallClaude({
+              system: CONTENT_PROMPT + ctxSuffix,
               userMessage: lectureContext,
               maxTokens: 32000,
               thinking: true,
@@ -772,15 +831,15 @@ ${shortRelevantText}
 ${regenConcepts}`;
 
             const [cascadeAreas, cascadeQuestions] = await Promise.all([
-              callClaude({
-                system: AREAS_PROMPT,
+              trackedCallClaude({
+                system: AREAS_PROMPT + ctxSuffix,
                 userMessage: cascadeContext,
                 maxTokens: 16000,
                 thinking: true,
                 thinkingBudget: 4000,
               }).then(parseContentResponse),
-              callClaude({
-                system: QUESTIONS_PROMPT,
+              trackedCallClaude({
+                system: QUESTIONS_PROMPT + ctxSuffix,
                 userMessage: cascadeContext,
                 maxTokens: 16000,
                 thinking: true,
@@ -817,8 +876,8 @@ ${shortRelevantText}
 ${finalKeyConcepts}`;
 
           const regenQuestions = parseContentResponse(
-            await callClaude({
-              system: QUESTIONS_PROMPT,
+            await trackedCallClaude({
+              system: QUESTIONS_PROMPT + ctxSuffix,
               userMessage: freshContext,
               maxTokens: 16000,
               thinking: true,
@@ -843,12 +902,29 @@ ${finalKeyConcepts}`;
         })
         .returning();
 
-      await db.insert(studyAids).values({
-        lectureId: createdLecture.id,
-        keyConcepts: finalKeyConcepts,
-        areasOfConcentration: finalAreas,
-        examQuestions: finalQuestions,
-      });
+      // Check if old lecture had manual edits — preserve them
+      const oldMatch = oldLectureMap.get(lec.title.toLowerCase().trim());
+      const oldStudyAid = oldMatch?.studyAid;
+      const hasManualEdits = oldStudyAid?.manuallyEdited;
+
+      if (hasManualEdits) {
+        await db.insert(studyAids).values({
+          lectureId: createdLecture.id,
+          keyConcepts: oldStudyAid.keyConcepts,
+          areasOfConcentration: oldStudyAid.areasOfConcentration,
+          examQuestions: oldStudyAid.examQuestions,
+          manuallyEdited: true,
+        });
+        manualEditsPreserved++;
+        console.log(`Preserved manual edits for "${lec.title}"`);
+      } else {
+        await db.insert(studyAids).values({
+          lectureId: createdLecture.id,
+          keyConcepts: finalKeyConcepts,
+          areasOfConcentration: finalAreas,
+          examQuestions: finalQuestions,
+        });
+      }
 
       createdLectureIds.push({ lectureId: createdLecture.id, outline: lec });
       lecturesCreated++;
@@ -890,11 +966,19 @@ ${finalKeyConcepts}`;
         status: "done",
         error: null,
         lecturesCreated,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
         completedAt: new Date(),
       })
       .where(eq(generationJobs.id, jobId));
 
-    console.log(`Generation complete: ${lecturesCreated} lectures created`);
+    // Auto-publish the course now that lectures are ready
+    await db
+      .update(courses)
+      .set({ status: "published", updatedAt: new Date() })
+      .where(eq(courses.id, courseId));
+
+    console.log(`Generation complete: ${lecturesCreated} lectures created, ${manualEditsPreserved} manual edits preserved`);
   } catch (error) {
     console.error("Course lecture generation failed:", error);
     await db

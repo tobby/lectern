@@ -145,7 +145,7 @@ export default function ChatPanel({ lectureId, className, compact, slideContext 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
       </div>
     );
   }
@@ -168,7 +168,7 @@ export default function ChatPanel({ lectureId, className, compact, slideContext 
             <div
               className={`rounded-lg px-3 py-1.5 text-xs leading-relaxed overflow-hidden ${
                 msg.role === "user"
-                  ? "max-w-[80%] bg-indigo-600 text-white"
+                  ? "max-w-[80%] bg-primary-600 text-white"
                   : "max-w-[90%] bg-gray-50 text-gray-800 border border-gray-100"
               }`}
             >
@@ -244,12 +244,12 @@ export default function ChatPanel({ lectureId, className, compact, slideContext 
                 ? "Quota exceeded"
                 : "Ask about this lecture..."
             }
-            className="flex-1 rounded border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-50"
+            className="flex-1 rounded border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 disabled:bg-gray-50"
           />
           <button
             onClick={sendMessage}
             disabled={!input.trim() || sending || quotaExhausted}
-            className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="rounded bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Send
           </button>

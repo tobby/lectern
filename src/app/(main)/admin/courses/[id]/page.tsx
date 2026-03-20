@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
+import { Modal } from "@/components/modal";
 
 interface User {
   id: string;
@@ -37,6 +38,8 @@ interface GenerationJob {
   status: "pending" | "processing" | "done" | "failed";
   error: string | null;
   lecturesCreated: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
   startedAt: string | null;
   completedAt: string | null;
 }
@@ -96,6 +99,9 @@ export default function CourseManagementPage() {
 
   // Generation state
   const [generating, setGenerating] = useState(false);
+  const [showRegenerateModal, setShowRegenerateModal] = useState(false);
+  const [alertModal, setAlertModal] = useState<string | null>(null);
+  const [deleteLectureModal, setDeleteLectureModal] = useState<{ id: string; title: string } | null>(null);
 
   // Lecture edit state
   const [editingLectureId, setEditingLectureId] = useState<string | null>(null);
@@ -197,7 +203,7 @@ export default function CourseManagementPage() {
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to update status";
-      alert(message);
+      setAlertModal(message);
     }
   }
 
@@ -217,7 +223,7 @@ export default function CourseManagementPage() {
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to update course";
-      alert(message);
+      setAlertModal(message);
     } finally {
       setCourseSaving(false);
     }
@@ -243,7 +249,7 @@ export default function CourseManagementPage() {
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to upload files";
-      alert(message);
+      setAlertModal(message);
     } finally {
       setUploading(false);
       setUploadingFiles([]);
@@ -258,18 +264,19 @@ export default function CourseManagementPage() {
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to delete upload";
-      alert(message);
+      setAlertModal(message);
     }
   }
 
-  async function handleGenerate() {
+  function handleGenerateClick() {
     if (lectures.length > 0) {
-      const confirmed = window.confirm(
-        `This will replace ${lectures.length} existing lecture${lectures.length !== 1 ? "s" : ""} and their study aids. Student progress and chat history for those lectures will be lost. Continue?`
-      );
-      if (!confirmed) return;
+      setShowRegenerateModal(true);
+      return;
     }
+    doGenerate();
+  }
 
+  async function doGenerate() {
     setGenerating(true);
     try {
       const job = await api.post<GenerationJob>(
@@ -281,7 +288,7 @@ export default function CourseManagementPage() {
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to start generation";
-      alert(message);
+      setAlertModal(message);
     } finally {
       setGenerating(false);
     }
@@ -299,28 +306,27 @@ export default function CourseManagementPage() {
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to update lecture";
-      alert(message);
+      setAlertModal(message);
     } finally {
       setSavingLecture(false);
     }
   }
 
-  async function handleDeleteLecture(lectureId: string, title: string) {
-    if (!window.confirm(`Delete lecture "${title}"?`)) return;
+  async function handleDeleteLecture(lectureId: string) {
     try {
       await api.delete(`/api/lectures/${lectureId}`);
       setLectures((prev) => prev.filter((l) => l.id !== lectureId));
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to delete lecture";
-      alert(message);
+      setAlertModal(message);
     }
   }
 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" />
       </div>
     );
   }
@@ -356,7 +362,7 @@ export default function CourseManagementPage() {
                 onChange={(e) =>
                   setCourseForm({ ...courseForm, title: e.target.value })
                 }
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
               />
             </div>
             <div>
@@ -369,7 +375,7 @@ export default function CourseManagementPage() {
                 onChange={(e) =>
                   setCourseForm({ ...courseForm, description: e.target.value })
                 }
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
               />
             </div>
             <div>
@@ -384,7 +390,7 @@ export default function CourseManagementPage() {
                     institutionId: e.target.value,
                   })
                 }
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
               >
                 <option value="">None</option>
                 {institutions.map((inst) => (
@@ -406,7 +412,7 @@ export default function CourseManagementPage() {
                   })
                 }
                 className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-                  courseForm.isPublic ? "bg-indigo-600" : "bg-gray-200"
+                  courseForm.isPublic ? "bg-primary-600" : "bg-gray-200"
                 }`}
               >
                 <span
@@ -421,7 +427,7 @@ export default function CourseManagementPage() {
               <button
                 type="submit"
                 disabled={courseSaving}
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
               >
                 {courseSaving ? "Saving..." : "Save"}
               </button>
@@ -509,7 +515,7 @@ export default function CourseManagementPage() {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            className="rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50 transition-colors"
           >
             {uploading ? "Uploading..." : "Upload Files"}
           </button>
@@ -526,11 +532,11 @@ export default function CourseManagementPage() {
         {/* Drop zone / upload area */}
         <div
           onClick={() => !uploading && fileInputRef.current?.click()}
-          className="mb-4 cursor-pointer rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center transition-colors hover:border-indigo-400 hover:bg-indigo-50/30"
+          className="mb-4 cursor-pointer rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center transition-colors hover:border-primary-400 hover:bg-primary-50/30"
         >
           {uploading ? (
             <div>
-              <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+              <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" />
               <p className="text-sm text-gray-600">
                 Uploading {uploadingFiles.join(", ")}...
               </p>
@@ -608,9 +614,9 @@ export default function CourseManagementPage() {
         {uploads.length > 0 && (
           <div className="mt-4 flex items-center gap-4">
             <button
-              onClick={handleGenerate}
+              onClick={handleGenerateClick}
               disabled={isProcessing || generating}
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              className="rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50 transition-colors"
             >
               {isProcessing
                 ? "Generating..."
@@ -622,7 +628,7 @@ export default function CourseManagementPage() {
             {generationJob && (
               <div className="flex items-center gap-2">
                 {isProcessing && (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-600 border-t-transparent" />
                 )}
                 <span
                   className={`text-sm ${
@@ -646,6 +652,30 @@ export default function CourseManagementPage() {
           </div>
         )}
       </div>
+
+      {/* Generation Stats */}
+      {generationJob?.status === "done" && (generationJob.inputTokens || generationJob.outputTokens) && (
+        <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Lectures</p>
+            <p className="mt-1 text-xl font-bold text-gray-900">{generationJob.lecturesCreated || 0}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Input Tokens</p>
+            <p className="mt-1 text-xl font-bold text-gray-900">{(generationJob.inputTokens || 0).toLocaleString()}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Output Tokens</p>
+            <p className="mt-1 text-xl font-bold text-gray-900">{(generationJob.outputTokens || 0).toLocaleString()}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Est. Cost</p>
+            <p className="mt-1 text-xl font-bold text-gray-900">
+              ${(((generationJob.inputTokens || 0) / 1_000_000 * 3) + ((generationJob.outputTokens || 0) / 1_000_000 * 15)).toFixed(2)}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Lectures Section */}
       <div className="mb-6 flex items-center justify-between">
@@ -676,7 +706,7 @@ export default function CourseManagementPage() {
                     type="text"
                     value={editLectureTitle}
                     onChange={(e) => setEditLectureTitle(e.target.value)}
-                    className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
@@ -688,7 +718,7 @@ export default function CourseManagementPage() {
                   <button
                     onClick={() => handleSaveLecture(lecture.id)}
                     disabled={savingLecture}
-                    className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                    className="rounded-md bg-primary-600 px-2 py-1 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
                   >
                     {savingLecture ? "..." : "Save"}
                   </button>
@@ -702,7 +732,7 @@ export default function CourseManagementPage() {
               ) : (
                 <>
                   <div className="flex items-center gap-3">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-xs font-medium text-indigo-700">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-100 text-xs font-medium text-primary-700">
                       {idx + 1}
                     </span>
                     <span className="text-sm font-medium text-gray-900">
@@ -719,7 +749,7 @@ export default function CourseManagementPage() {
                   <div className="flex items-center gap-1">
                     <Link
                       href={`/admin/courses/${courseId}/lectures/${lecture.id}`}
-                      className="rounded-md px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50"
+                      className="rounded-md px-2 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50"
                     >
                       Manage
                     </Link>
@@ -734,7 +764,7 @@ export default function CourseManagementPage() {
                     </button>
                     <button
                       onClick={() =>
-                        handleDeleteLecture(lecture.id, lecture.title)
+                        setDeleteLectureModal({ id: lecture.id, title: lecture.title })
                       }
                       className="rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
                     >
@@ -747,6 +777,33 @@ export default function CourseManagementPage() {
           ))}
         </div>
       )}
+
+      <Modal
+        open={showRegenerateModal}
+        onClose={() => setShowRegenerateModal(false)}
+        onConfirm={doGenerate}
+        title="Regenerate Lectures"
+        message="This will regenerate all lectures from all uploaded materials. Manual edits to study aids will be preserved for matching topics. Student progress and chat history will be reset. Continue?"
+        confirmText="Regenerate"
+        variant="destructive"
+      />
+
+      <Modal
+        open={!!deleteLectureModal}
+        onClose={() => setDeleteLectureModal(null)}
+        onConfirm={() => deleteLectureModal && handleDeleteLecture(deleteLectureModal.id)}
+        title="Delete Lecture"
+        message={`Delete lecture "${deleteLectureModal?.title}"?`}
+        confirmText="Delete"
+        variant="destructive"
+      />
+
+      <Modal
+        open={!!alertModal}
+        onClose={() => setAlertModal(null)}
+        title="Error"
+        message={alertModal || ""}
+      />
     </div>
   );
 }

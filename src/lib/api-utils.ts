@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getCurrentUser, requireAuth, requireAdmin } from "./auth/session";
 import { rateLimit } from "./rate-limit";
 import type { JwtPayload } from "./auth/jwt";
+import { db } from "./db/drizzle";
+import { courses } from "./db/schema";
 
 export function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
@@ -36,6 +38,36 @@ export function withAdmin(handler: HandlerFn) {
       return handler(req, { user, params: params });
     } catch (e: any) {
       if (e.message === "Forbidden") return error("Forbidden", 403);
+      return error("Unauthorized", 401);
+    }
+  };
+}
+
+type OwnerHandlerFn = (
+  req: Request,
+  context: { user: JwtPayload; params?: Record<string, string>; course: typeof courses.$inferSelect }
+) => Promise<NextResponse | Response>;
+
+export function withOwner(handler: OwnerHandlerFn) {
+  return async (req: Request, ctx?: { params: Promise<Record<string, string>> }) => {
+    try {
+      const user = await requireAuth();
+      const params = ctx ? await ctx.params : undefined;
+      const courseId = params?.id;
+
+      if (!courseId) return error("Course ID required", 400);
+
+      const course = await db.query.courses.findFirst({
+        where: (c, { eq: e }) => e(c.id, courseId),
+      });
+
+      if (!course) return error("Course not found", 404);
+      if (course.createdBy !== user.sub && !user.isAdmin) {
+        return error("Forbidden", 403);
+      }
+
+      return handler(req, { user, params, course });
+    } catch {
       return error("Unauthorized", 401);
     }
   };

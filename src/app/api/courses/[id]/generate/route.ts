@@ -1,17 +1,11 @@
 import { db } from "@/lib/db/drizzle";
 import { generationJobs, courseUploads } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { json, error, withAdmin } from "@/lib/api-utils";
+import { json, error, withOwner } from "@/lib/api-utils";
 import { generateCourseLectures } from "@/lib/ai/generate-course-lectures";
 
-export const POST = withAdmin(async (req, { user, params }) => {
+export const POST = withOwner(async (req, { user, params, course }) => {
   const courseId = params!.id;
-
-  const course = await db.query.courses.findFirst({
-    where: (c, { eq: e }) => e(c.id, courseId),
-  });
-  if (!course) return error("Course not found", 404);
-  if (course.createdBy !== user.sub) return error("Forbidden", 403);
 
   // Check uploads exist
   const uploads = await db.query.courseUploads.findMany({
@@ -44,7 +38,7 @@ export const POST = withAdmin(async (req, { user, params }) => {
   return json(job, 201);
 });
 
-export const GET = withAdmin(async (req, { user, params }) => {
+export const GET = withOwner(async (req, { user, params, course }) => {
   const courseId = params!.id;
 
   const latestJob = await db.query.generationJobs.findFirst({

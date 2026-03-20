@@ -10,6 +10,16 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-primary-50: #e8f4fa;
+  --color-primary-100: #c5e3f2;
+  --color-primary-200: #93cce5;
+  --color-primary-300: #5bb0d4;
+  --color-primary-400: #2e95c2;
+  --color-primary-500: #167aab;
+  --color-primary-600: #136286;
+  --color-primary-700: #104f6d;
+  --color-primary-800: #0d3d54;
+  --color-primary-900: #092a3a;
 }
 
 @media (prefers-color-scheme: dark) {

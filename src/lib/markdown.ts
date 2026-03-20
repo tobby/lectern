@@ -83,7 +83,7 @@ export function markdownToHtml(text: string): string {
   );
   // Inline math $...$ → styled code
   processed = processed.replace(/\$([^\$\n]+?)\$/g, (_, math) =>
-    stash(`<code class="bg-indigo-50 text-indigo-700 rounded px-1.5 py-0.5 text-sm font-mono">${escapeHtml(math.trim())}</code>`)
+    stash(`<code class="bg-primary-50 text-primary-700 rounded px-1.5 py-0.5 text-sm font-mono">${escapeHtml(math.trim())}</code>`)
   );
 
   // 4. Now safe to escape remaining text
@@ -126,7 +126,7 @@ export function markdownToHtml(text: string): string {
     // Blockquotes (must match &gt; since > was already escaped)
     .replace(
       /^&gt; (.+)$/gm,
-      '<blockquote class="border-l-4 border-indigo-200 bg-indigo-50 pl-4 py-2 my-3 text-sm text-indigo-900 rounded-r-lg">$1</blockquote>'
+      '<blockquote class="border-l-4 border-primary-200 bg-primary-50 pl-4 py-2 my-3 text-sm text-primary-900 rounded-r-lg">$1</blockquote>'
     )
     // Horizontal rules
     .replace(/^---$/gm, '<hr class="my-6 border-gray-200" />');

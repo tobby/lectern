@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   keywords: [
     "study platform",
     "AI tutor",
-    "MBA study aid",
+    "study platform",
     "university exam prep",
     "AI lecture notes",
     "practice questions",

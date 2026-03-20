@@ -48,11 +48,19 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Track your enrolled courses and study progress.
-        </p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Track your enrolled courses and study progress.
+          </p>
+        </div>
+        <Link
+          href="/my-courses"
+          className="rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
+        >
+          My Courses
+        </Link>
       </div>
 
       {error && (
@@ -90,7 +98,7 @@ export default function DashboardPage() {
           </p>
           <Link
             href="/courses"
-            className="mt-6 inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition-colors"
+            className="mt-6 inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-700 transition-colors"
           >
             Browse Courses
           </Link>
@@ -101,9 +109,9 @@ export default function DashboardPage() {
             <Link
               key={enrollment.id}
               href={`/courses/${enrollment.course.id}`}
-              className="group rounded-lg border border-gray-200 bg-white p-6 shadow-sm transition-all hover:shadow-md hover:border-indigo-200"
+              className="group rounded-lg border border-gray-200 bg-white p-6 shadow-sm transition-all hover:shadow-md hover:border-primary-200"
             >
-              <h3 className="text-lg font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors">
+              <h3 className="text-lg font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">
                 {enrollment.course.title}
               </h3>
 
@@ -116,13 +124,13 @@ export default function DashboardPage() {
               <div className="mt-5">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-600">Progress</span>
-                  <span className="font-medium text-indigo-600">
+                  <span className="font-medium text-primary-600">
                     {enrollment.progress.percentage}%
                   </span>
                 </div>
                 <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-gray-100">
                   <div
-                    className="h-full rounded-full bg-indigo-600 transition-all duration-500"
+                    className="h-full rounded-full bg-primary-600 transition-all duration-500"
                     style={{
                       width: `${enrollment.progress.percentage}%`,
                     }}

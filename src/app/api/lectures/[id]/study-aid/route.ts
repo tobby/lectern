@@ -64,6 +64,7 @@ export const PATCH = withAdmin(async (req, { user, params }) => {
       ...(body.examQuestions !== undefined && {
         examQuestions: body.examQuestions,
       }),
+      manuallyEdited: true,
     })
     .where(eq(studyAids.id, studyAid.id))
     .returning();

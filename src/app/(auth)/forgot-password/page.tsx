@@ -54,7 +54,7 @@ export default function ForgotPasswordPage() {
           </p>
           <Link
             href="/login"
-            className="text-sm text-indigo-600 hover:text-indigo-500 font-medium"
+            className="text-sm text-primary-600 hover:text-primary-500 font-medium"
           >
             Back to sign in
           </Link>
@@ -93,7 +93,7 @@ export default function ForgotPasswordPage() {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+            className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
             placeholder="you@example.com"
           />
         </div>
@@ -101,7 +101,7 @@ export default function ForgotPasswordPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="w-full rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {loading ? "Sending..." : "Send reset link"}
         </button>
@@ -110,7 +110,7 @@ export default function ForgotPasswordPage() {
       <p className="mt-6 text-center text-sm text-slate-500">
         <Link
           href="/login"
-          className="text-indigo-600 hover:text-indigo-500 font-medium"
+          className="text-primary-600 hover:text-primary-500 font-medium"
         >
           Back to sign in
         </Link>

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
+import { Modal } from "@/components/modal";
 
 interface User {
   id: string;
@@ -42,6 +43,8 @@ export default function MessagePacksPage() {
   // Delete/toggle state
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{ id: string; name: string } | null>(null);
+  const [alertModal, setAlertModal] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -125,7 +128,7 @@ export default function MessagePacksPage() {
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to update message pack";
-      alert(message);
+      setAlertModal(message);
     } finally {
       setSaving(false);
     }
@@ -144,14 +147,13 @@ export default function MessagePacksPage() {
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to toggle status";
-      alert(message);
+      setAlertModal(message);
     } finally {
       setTogglingId(null);
     }
   }
 
-  async function handleDelete(id: string, name: string) {
-    if (!window.confirm(`Delete message pack "${name}"?`)) return;
+  async function handleDelete(id: string) {
     setDeletingId(id);
     try {
       await api.delete(`/api/message-packs/${id}`);
@@ -159,7 +161,7 @@ export default function MessagePacksPage() {
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to delete message pack";
-      alert(message);
+      setAlertModal(message);
     } finally {
       setDeletingId(null);
     }
@@ -168,7 +170,7 @@ export default function MessagePacksPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" />
       </div>
     );
   }
@@ -193,7 +195,7 @@ export default function MessagePacksPage() {
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+          className="rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
         >
           Add Pack
         </button>
@@ -203,7 +205,7 @@ export default function MessagePacksPage() {
       {showCreate && (
         <form
           onSubmit={handleCreate}
-          className="mb-6 rounded-lg border border-indigo-200 bg-indigo-50 p-4"
+          className="mb-6 rounded-lg border border-primary-200 bg-primary-50 p-4"
         >
           <h3 className="mb-3 text-sm font-medium text-gray-900">
             New Message Pack
@@ -220,7 +222,7 @@ export default function MessagePacksPage() {
               placeholder="Pack name *"
               value={createName}
               onChange={(e) => setCreateName(e.target.value)}
-              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
             />
             <div className="grid grid-cols-2 gap-3">
               <input
@@ -230,7 +232,7 @@ export default function MessagePacksPage() {
                 placeholder="Number of messages *"
                 value={createMessages}
                 onChange={(e) => setCreateMessages(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
               />
               <input
                 type="number"
@@ -240,14 +242,14 @@ export default function MessagePacksPage() {
                 placeholder="Price *"
                 value={createPrice}
                 onChange={(e) => setCreatePrice(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
               />
             </div>
             <div className="flex gap-2">
               <button
                 type="submit"
                 disabled={creating}
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
               >
                 {creating ? "Creating..." : "Create"}
               </button>
@@ -303,7 +305,7 @@ export default function MessagePacksPage() {
                           type="text"
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
-                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
                               e.preventDefault();
@@ -319,7 +321,7 @@ export default function MessagePacksPage() {
                           min="1"
                           value={editMessages}
                           onChange={(e) => setEditMessages(e.target.value)}
-                          className="w-20 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                          className="w-20 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
                         />
                       </td>
                       <td className="px-6 py-3">
@@ -329,7 +331,7 @@ export default function MessagePacksPage() {
                           step="0.01"
                           value={editPrice}
                           onChange={(e) => setEditPrice(e.target.value)}
-                          className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                          className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
                         />
                       </td>
                       <td className="px-6 py-3">
@@ -340,7 +342,7 @@ export default function MessagePacksPage() {
                           <button
                             onClick={() => handleSave(pack.id)}
                             disabled={saving}
-                            className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                            className="rounded-md bg-primary-600 px-2 py-1 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
                           >
                             {saving ? "..." : "Save"}
                           </button>
@@ -398,12 +400,12 @@ export default function MessagePacksPage() {
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => startEdit(pack)}
-                            className="rounded-md px-3 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 transition-colors"
+                            className="rounded-md px-3 py-1.5 text-sm font-medium text-primary-600 hover:bg-primary-50 transition-colors"
                           >
                             Edit
                           </button>
                           <button
-                            onClick={() => handleDelete(pack.id, pack.name)}
+                            onClick={() => setDeleteModal({ id: pack.id, name: pack.name })}
                             disabled={deletingId === pack.id}
                             className="rounded-md px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
                           >
@@ -419,6 +421,23 @@ export default function MessagePacksPage() {
           </table>
         </div>
       )}
+
+      <Modal
+        open={!!deleteModal}
+        onClose={() => setDeleteModal(null)}
+        onConfirm={() => deleteModal && handleDelete(deleteModal.id)}
+        title="Delete Message Pack"
+        message={`Delete message pack "${deleteModal?.name}"?`}
+        confirmText="Delete"
+        variant="destructive"
+      />
+
+      <Modal
+        open={!!alertModal}
+        onClose={() => setAlertModal(null)}
+        title="Error"
+        message={alertModal || ""}
+      />
     </div>
   );
 }

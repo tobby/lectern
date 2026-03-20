@@ -92,7 +92,7 @@ export default function CourseDetailPage() {
         <p className="text-sm text-red-700">{error}</p>
         <Link
           href="/courses"
-          className="mt-3 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-500"
+          className="mt-3 inline-block text-sm font-medium text-primary-600 hover:text-primary-500"
         >
           Back to courses
         </Link>
@@ -106,7 +106,7 @@ export default function CourseDetailPage() {
     <div>
       {/* Breadcrumb */}
       <nav className="mb-6 text-sm text-gray-500">
-        <Link href="/courses" className="hover:text-indigo-600">
+        <Link href="/courses" className="hover:text-primary-600">
           Courses
         </Link>
         <span className="mx-2">/</span>
@@ -117,7 +117,7 @@ export default function CourseDetailPage() {
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h1 className="text-2xl font-bold text-gray-900">{course.title}</h1>
         {course.institution && (
-          <p className="mt-1 text-sm text-indigo-600 font-medium">
+          <p className="mt-1 text-sm text-primary-600 font-medium">
             {course.institution.name}
           </p>
         )}
@@ -160,7 +160,7 @@ export default function CourseDetailPage() {
                         progress?.status === "completed"
                           ? "bg-green-100 text-green-600"
                           : progress?.status === "in_progress"
-                            ? "bg-indigo-100 text-indigo-600"
+                            ? "bg-primary-100 text-primary-600"
                             : "bg-gray-100 text-gray-400"
                       }`}
                     >

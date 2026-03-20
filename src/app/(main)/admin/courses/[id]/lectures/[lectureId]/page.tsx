@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
+import { Modal } from "@/components/modal";
 
 interface User {
   id: string;
@@ -95,6 +96,8 @@ export default function LectureManagementPage() {
     examQuestions: "",
   });
   const [studyAidSaving, setStudyAidSaving] = useState(false);
+  const [alertModal, setAlertModal] = useState<string | null>(null);
+  const [deleteMaterialModal, setDeleteMaterialModal] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     api
@@ -213,14 +216,13 @@ export default function LectureManagementPage() {
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Upload failed";
-      alert(message);
+      setAlertModal(message);
     } finally {
       setUploading(false);
     }
   }
 
-  async function handleDeleteMaterial(materialId: string, fileName: string) {
-    if (!window.confirm(`Delete material "${fileName}"?`)) return;
+  async function handleDeleteMaterial(materialId: string) {
     setDeletingMaterial(materialId);
     try {
       await api.delete(`/api/materials/${materialId}`);
@@ -237,7 +239,7 @@ export default function LectureManagementPage() {
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to delete material";
-      alert(message);
+      setAlertModal(message);
     } finally {
       setDeletingMaterial(null);
     }
@@ -256,7 +258,7 @@ export default function LectureManagementPage() {
       await loadStudyAid();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to save study aid";
-      alert(message);
+      setAlertModal(message);
     } finally {
       setStudyAidSaving(false);
     }
@@ -265,7 +267,7 @@ export default function LectureManagementPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" />
       </div>
     );
   }
@@ -331,11 +333,11 @@ export default function LectureManagementPage() {
                 accept=".pdf,.docx,.pptx,.txt"
                 onChange={handleUpload}
                 disabled={uploading}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100 disabled:opacity-50"
+                className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-primary-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-700 hover:file:bg-primary-100 disabled:opacity-50"
               />
               {uploading && (
-                <div className="flex items-center gap-2 text-sm text-indigo-600">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                <div className="flex items-center gap-2 text-sm text-primary-600">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-600 border-t-transparent" />
                   Uploading...
                 </div>
               )}
@@ -368,7 +370,7 @@ export default function LectureManagementPage() {
                     </div>
                   </div>
                   <button
-                    onClick={() => handleDeleteMaterial(mat.id, mat.fileName)}
+                    onClick={() => setDeleteMaterialModal({ id: mat.id, name: mat.fileName })}
                     disabled={deletingMaterial === mat.id}
                     className="rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
                   >
@@ -402,7 +404,7 @@ export default function LectureManagementPage() {
         <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           {studyAidLoading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="h-6 w-6 animate-spin rounded-full border-3 border-indigo-600 border-t-transparent" />
+              <div className="h-6 w-6 animate-spin rounded-full border-3 border-primary-600 border-t-transparent" />
             </div>
           ) : studyAidResponse?.status === "done" && studyAidResponse.studyAid ? (
             studyAidEditing ? (
@@ -420,7 +422,7 @@ export default function LectureManagementPage() {
                         keyConcepts: e.target.value,
                       })
                     }
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
                   />
                 </div>
                 <div>
@@ -436,7 +438,7 @@ export default function LectureManagementPage() {
                         areasOfConcentration: e.target.value,
                       })
                     }
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
                   />
                 </div>
                 <div>
@@ -452,14 +454,14 @@ export default function LectureManagementPage() {
                         examQuestions: e.target.value,
                       })
                     }
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
                   />
                 </div>
                 <div className="flex gap-2">
                   <button
                     type="submit"
                     disabled={studyAidSaving}
-                    className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                    className="rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
                   >
                     {studyAidSaving ? "Saving..." : "Save"}
                   </button>
@@ -529,7 +531,7 @@ export default function LectureManagementPage() {
               {studyAidResponse?.status !== "pending" && (
                 <button
                   onClick={loadStudyAid}
-                  className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                  className="mt-3 text-sm font-medium text-primary-600 hover:text-primary-700"
                 >
                   Refresh Status
                 </button>
@@ -538,6 +540,23 @@ export default function LectureManagementPage() {
           )}
         </div>
       </div>
+
+      <Modal
+        open={!!deleteMaterialModal}
+        onClose={() => setDeleteMaterialModal(null)}
+        onConfirm={() => deleteMaterialModal && handleDeleteMaterial(deleteMaterialModal.id)}
+        title="Delete Material"
+        message={`Delete material "${deleteMaterialModal?.name}"?`}
+        confirmText="Delete"
+        variant="destructive"
+      />
+
+      <Modal
+        open={!!alertModal}
+        onClose={() => setAlertModal(null)}
+        title="Error"
+        message={alertModal || ""}
+      />
     </div>
   );
 }

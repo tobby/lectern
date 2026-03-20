@@ -4,6 +4,7 @@ import {
   chatMessages,
   studyAids,
   enrollments,
+  users,
 } from "@/lib/db/schema";
 import { eq, and, desc, asc } from "drizzle-orm";
 import { json, error, withAuth, userRateLimit } from "@/lib/api-utils";
@@ -109,7 +110,17 @@ export const POST = withAuth(async (req, { user, params }) => {
       content: m.content,
     }));
 
-  const systemPrompt = buildChatSystemPrompt(studyAid, typeof slideContext === "string" ? slideContext : undefined);
+  // Load user profile for personalized responses
+  const userProfile = await db.query.users.findFirst({
+    where: (u, { eq: e }) => e(u.id, user.sub),
+    columns: { educationLevel: true, fieldOfStudy: true, learningGoal: true },
+  });
+
+  const systemPrompt = buildChatSystemPrompt(
+    studyAid,
+    typeof slideContext === "string" ? slideContext : undefined,
+    userProfile || undefined
+  );
 
   // Stream response
   const stream = await anthropic.messages.stream({
@@ -184,9 +195,10 @@ const MAX_CONTEXT_CHARS = 15000;
 
 function buildChatSystemPrompt(
   studyAid: { keyConcepts: string | null; areasOfConcentration: string | null; examQuestions: string | null } | undefined,
-  slideContext?: string
+  slideContext?: string,
+  userProfile?: { educationLevel: string | null; fieldOfStudy: string | null; learningGoal: string | null }
 ): string {
-  let prompt = `You are a helpful MBA study assistant. Answer questions using ONLY the lecture material below. If asked about something not covered, briefly redirect.
+  let prompt = `You are a helpful study assistant. Answer questions using ONLY the lecture material below. If asked about something not covered, briefly redirect.
 
 RESPONSE RULES:
 - Keep answers SHORT — 2-4 sentences for simple questions, 1-2 short paragraphs max for complex ones.
@@ -195,6 +207,22 @@ RESPONSE RULES:
 - Do NOT repeat the question back. Do NOT use filler phrases like "Great question!" or "Let me explain..."
 - Do NOT use large headings (# or ##). Use **bold** for emphasis and ### only if listing multiple distinct points.
 - When explaining a concept, give the key insight in one sentence, then a brief example if helpful.`;
+
+  if (userProfile?.educationLevel) {
+    const levelLabel: Record<string, string> = {
+      high_school: "high school", undergraduate: "undergraduate",
+      postgraduate: "postgraduate", professional: "professional",
+    };
+    const goalLabel: Record<string, string> = {
+      exam_prep: "exam preparation", deep_understanding: "deep understanding",
+      quick_review: "quick review",
+    };
+    const level = levelLabel[userProfile.educationLevel] || userProfile.educationLevel;
+    prompt += `\n\nSTUDENT PROFILE: This student is at the ${level} level`;
+    if (userProfile.fieldOfStudy) prompt += `, studying ${userProfile.fieldOfStudy}`;
+    if (userProfile.learningGoal) prompt += `, focused on ${goalLabel[userProfile.learningGoal] || userProfile.learningGoal}`;
+    prompt += `. Adjust your explanations and examples to match this level.`;
+  }
 
   if (slideContext) {
     prompt += `\n\nThe student is currently viewing this section:\n${slideContext}\nPrioritize answering about this topic, but you may reference other parts of the lecture if relevant.`;

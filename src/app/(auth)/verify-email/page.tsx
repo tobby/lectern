@@ -40,7 +40,7 @@ function VerifyEmailContent() {
   if (status === "loading") {
     return (
       <div className="text-center py-4">
-        <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
+        <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
         <h2 className="text-xl font-semibold text-slate-900 mb-2">
           Verifying your email
         </h2>
@@ -75,7 +75,7 @@ function VerifyEmailContent() {
         <p className="text-sm text-slate-500 mb-6">{message}</p>
         <Link
           href="/login"
-          className="inline-block rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors"
+          className="inline-block rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 transition-colors"
         >
           Sign in
         </Link>
@@ -106,7 +106,7 @@ function VerifyEmailContent() {
       <p className="text-sm text-slate-500 mb-6">{message}</p>
       <Link
         href="/login"
-        className="text-sm text-indigo-600 hover:text-indigo-500 font-medium"
+        className="text-sm text-primary-600 hover:text-primary-500 font-medium"
       >
         Back to sign in
       </Link>
@@ -119,7 +119,7 @@ export default function VerifyEmailPage() {
     <Suspense
       fallback={
         <div className="text-center py-4">
-          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
         </div>
       }
     >

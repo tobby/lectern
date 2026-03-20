@@ -43,7 +43,12 @@ export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   fullName: varchar("full_name", { length: 255 }).notNull(),
   email: varchar("email", { length: 255 }).notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
+  passwordHash: text("password_hash"),
+  googleId: varchar("google_id", { length: 255 }).unique(),
+  avatarUrl: text("avatar_url"),
+  educationLevel: varchar("education_level", { length: 20 }),
+  fieldOfStudy: varchar("field_of_study", { length: 255 }),
+  learningGoal: varchar("learning_goal", { length: 20 }),
   isAdmin: boolean("is_admin").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -122,6 +127,7 @@ export const courses = pgTable("courses", {
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id),
+  source: varchar("source", { length: 10 }).notNull().default("admin"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -189,6 +195,7 @@ export const studyAids = pgTable(
     keyConcepts: text("key_concepts"),
     areasOfConcentration: text("areas_of_concentration"),
     examQuestions: text("exam_questions"),
+    manuallyEdited: boolean("manually_edited").notNull().default(false),
     generatedAt: timestamp("generated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -338,6 +345,8 @@ export const generationJobs = pgTable("generation_jobs", {
   status: generationJobStatusEnum("status").notNull().default("pending"),
   error: text("error"),
   lecturesCreated: integer("lectures_created").default(0),
+  inputTokens: integer("input_tokens").default(0),
+  outputTokens: integer("output_tokens").default(0),
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })

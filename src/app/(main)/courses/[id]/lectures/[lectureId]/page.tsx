@@ -40,6 +40,29 @@ interface Lecture {
   };
 }
 
+interface Preferences {
+  answer_mode: string;
+  question_order: string;
+  question_filter: string;
+  view_mode: string;
+}
+
+const DEFAULT_PREFS: Preferences = {
+  answer_mode: "hidden",
+  question_order: "default",
+  question_filter: "all",
+  view_mode: "detailed",
+};
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const shuffled = [...arr];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
 type Mode = "learn" | "practice" | "chat";
 
 function PageSkeleton() {
@@ -63,7 +86,7 @@ function StatusMessage({
     <div className="flex items-center justify-center min-h-[400px]">
       <div className="text-center max-w-md">
         {status === "processing" && (
-          <div className="mx-auto mb-6 h-12 w-12 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
+          <div className="mx-auto mb-6 h-12 w-12 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
         )}
         {status === "pending" && (
           <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
@@ -130,6 +153,9 @@ export default function LectureStudyAidPage() {
     };
   }, []);
 
+  // Preferences
+  const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
+
   // Parse content
   const [slides, setSlides] = useState<Slide[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -137,17 +163,32 @@ export default function LectureStudyAidPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [lectureData, studyData] = await Promise.all([
+        const [lectureData, studyData, userPrefs] = await Promise.all([
           api.get<Lecture>(`/api/lectures/${lectureId}`),
           api.get<StudyAidResponse>(`/api/lectures/${lectureId}/study-aid`),
+          api.get<Preferences>("/api/users/me/preferences").catch(() => DEFAULT_PREFS),
         ]);
         setLecture(lectureData);
         setStudyAidData(studyData);
+        setPrefs(userPrefs);
 
         if (studyData.status === "done" && studyData.studyAid) {
           const s = studyData.studyAid;
           setSlides(parseSlides(s.keyConcepts, s.areasOfConcentration));
-          setQuestions(parseQuestions(s.examQuestions));
+
+          let parsedQuestions = parseQuestions(s.examQuestions);
+
+          // Apply question filter
+          if (userPrefs.question_filter !== "all") {
+            parsedQuestions = parsedQuestions.filter((q) => q.type === userPrefs.question_filter);
+          }
+
+          // Apply question order
+          if (userPrefs.question_order === "randomized") {
+            parsedQuestions = shuffleArray(parsedQuestions);
+          }
+
+          setQuestions(parsedQuestions);
         }
       } catch (err: any) {
         setError(err.message || "Failed to load study aid");
@@ -183,7 +224,7 @@ export default function LectureStudyAidPage() {
         <p className="text-sm text-red-700">{error}</p>
         <Link
           href={`/courses/${courseId}`}
-          className="mt-3 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-500"
+          className="mt-3 inline-block text-sm font-medium text-primary-600 hover:text-primary-500"
         >
           Back to course
         </Link>
@@ -209,9 +250,9 @@ export default function LectureStudyAidPage() {
       <div className="shrink-0 flex items-center justify-between py-3">
         <div className="min-w-0">
           <nav className="text-xs text-gray-400 mb-0.5 truncate">
-            <Link href="/courses" className="hover:text-indigo-600">Courses</Link>
+            <Link href="/courses" className="hover:text-primary-600">Courses</Link>
             <span className="mx-1.5">/</span>
-            <Link href={`/courses/${courseId}`} className="hover:text-indigo-600">
+            <Link href={`/courses/${courseId}`} className="hover:text-primary-600">
               {lecture?.module?.course?.title || "Course"}
             </Link>
             <span className="mx-1.5">/</span>
@@ -226,7 +267,7 @@ export default function LectureStudyAidPage() {
           className={`shrink-0 ml-4 rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
             completed
               ? "bg-green-50 text-green-700 border border-green-200"
-              : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm disabled:opacity-50"
+              : "bg-primary-600 text-white hover:bg-primary-700 shadow-sm disabled:opacity-50"
           }`}
         >
           {completed ? (
@@ -288,12 +329,14 @@ export default function LectureStudyAidPage() {
                     currentSlide={currentSlide}
                     onSlideChange={setCurrentSlide}
                     onStartPractice={handleStartPractice}
+
                   />
                 ) : mode === "practice" ? (
                   <QuizView
                     questions={questions}
                     currentQuestion={currentQuestion}
                     onQuestionChange={setCurrentQuestion}
+                    answerMode={prefs.answer_mode as "hidden" | "visible"}
                   />
                 ) : null}
               </div>
@@ -308,7 +351,7 @@ export default function LectureStudyAidPage() {
                 document.body.style.userSelect = "none";
               }}
             >
-              <div className="w-1 h-12 rounded-full bg-gray-200 group-hover:bg-indigo-400 group-active:bg-indigo-500 transition-colors" />
+              <div className="w-1 h-12 rounded-full bg-gray-200 group-hover:bg-primary-400 group-active:bg-primary-500 transition-colors" />
             </div>
 
             {/* Chat panel — desktop */}
